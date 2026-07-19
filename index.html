@@ -301,30 +301,74 @@ function loadAudioPrefs(){
 let audioPrefs=loadAudioPrefs();
 const bgm=new Audio('assets/audio/star-pulse.mp3');
 bgm.loop=true; bgm.preload='auto'; bgm.volume=audioPrefs.muted?0:audioPrefs.bgm;
-const sfxPools={}, sfxCursor={}, sfxLast={};
+const SfxAudioContext=window.AudioContext||window.webkitAudioContext;
+const sfxBuffers={}, sfxLoads={}, sfxLast={}, sfxActiveCount={}, activeSfx=new Set();
+const SFX_ACTIVE_LIMIT={arrow:2,cannon:3,frost:2,laser:2,boss:1,build:2,ui:2,upgrade:2,evolution:2};
+const MAX_ACTIVE_SFX=10;
+let sfxContext=null, sfxMaster=null, sfxWarmPromise=null;
 function persistAudio(){ try{ localStorage.setItem(AUDIO_PREF_KEY,JSON.stringify(audioPrefs)); }catch(e){} }
+function ensureSfxContext(){
+  if(!SfxAudioContext)return null;
+  if(!sfxContext){
+    sfxContext=new SfxAudioContext({latencyHint:'interactive'});
+    sfxMaster=sfxContext.createGain();
+    sfxMaster.gain.value=audioPrefs.muted?0:audioPrefs.sfx;
+    sfxMaster.connect(sfxContext.destination);
+  }
+  if(sfxContext.state==='suspended')sfxContext.resume().catch(()=>{});
+  return sfxContext;
+}
+function loadSfx(id){
+  if(sfxBuffers[id])return Promise.resolve(sfxBuffers[id]);
+  if(sfxLoads[id])return sfxLoads[id];
+  const ac=ensureSfxContext();
+  if(!ac||!AUDIO_ASSETS[id])return Promise.resolve(null);
+  sfxLoads[id]=fetch(AUDIO_ASSETS[id]).then(r=>{
+    if(!r.ok)throw new Error('音效加载失败');
+    return r.arrayBuffer();
+  }).then(data=>ac.decodeAudioData(data)).then(buffer=>{
+    sfxBuffers[id]=buffer; return buffer;
+  }).catch(()=>null);
+  return sfxLoads[id];
+}
+function warmSfx(){
+  if(!ensureSfxContext())return;
+  if(!sfxWarmPromise){
+    const order=['ui','build','arrow','cannon','frost','laser','upgrade','evolution','boss'];
+    sfxWarmPromise=order.reduce((job,id)=>job.then(()=>loadSfx(id)),Promise.resolve());
+  }
+  return sfxWarmPromise;
+}
+function stopActiveSfx(){
+  for(const source of activeSfx){ try{ source.stop(); }catch(e){} }
+  activeSfx.clear();
+  for(const id of Object.keys(sfxActiveCount))sfxActiveCount[id]=0;
+}
 function playSfx(id,gain=1,rate=1,minGap=0){
-  if(audioPrefs.muted||audioPrefs.sfx<=0||!AUDIO_ASSETS[id])return;
+  if(document.hidden||audioPrefs.muted||audioPrefs.sfx<=0||!AUDIO_ASSETS[id])return;
   const now=performance.now();
   if(now-(sfxLast[id]||0)<minGap)return;
+  const ac=ensureSfxContext(), buffer=sfxBuffers[id];
+  if(!ac||!buffer){ loadSfx(id); return; }
+  if(activeSfx.size>=MAX_ACTIVE_SFX||(sfxActiveCount[id]||0)>=(SFX_ACTIVE_LIMIT[id]||2))return;
   sfxLast[id]=now;
-  if(!sfxPools[id]){
-    const size=id==='arrow'?5:3;
-    sfxPools[id]=Array.from({length:size},()=>{ const a=new Audio(AUDIO_ASSETS[id]); a.preload='auto'; return a; });
-    sfxCursor[id]=0;
-  }
-  const pool=sfxPools[id];
-  let a=pool.find(x=>x.paused||x.ended);
-  if(!a){ a=pool[sfxCursor[id]%pool.length]; sfxCursor[id]++; }
-  try{ a.currentTime=0; }catch(e){}
-  a.volume=Math.max(0,Math.min(1,audioPrefs.sfx*gain));
-  a.playbackRate=Math.max(.55,Math.min(1.8,rate));
-  if('preservesPitch' in a)a.preservesPitch=false;
-  a.play().catch(()=>{});
+  const source=ac.createBufferSource(), level=ac.createGain();
+  source.buffer=buffer;
+  source.playbackRate.value=Math.max(.55,Math.min(1.8,rate));
+  level.gain.value=Math.max(0,Math.min(1,gain));
+  source.connect(level); level.connect(sfxMaster);
+  activeSfx.add(source);
+  sfxActiveCount[id]=(sfxActiveCount[id]||0)+1;
+  source.onended=()=>{
+    if(activeSfx.delete(source))sfxActiveCount[id]=Math.max(0,(sfxActiveCount[id]||1)-1);
+    source.disconnect(); level.disconnect();
+  };
+  source.start();
 }
 function applyAudioPrefs(){
   bgm.volume=audioPrefs.muted?0:audioPrefs.bgm;
-  if(audioPrefs.muted)bgm.pause();
+  if(sfxMaster&&sfxContext)sfxMaster.gain.setValueAtTime(audioPrefs.muted?0:audioPrefs.sfx,sfxContext.currentTime);
+  if(audioPrefs.muted){ bgm.pause(); stopActiveSfx(); }
   const icon=audioPrefs.muted||(!audioPrefs.bgm&&!audioPrefs.sfx)?'🔇':'🔊';
   document.getElementById('btnAudio').textContent=icon;
   document.getElementById('btnAudio').title=audioPrefs.muted?'声音已关闭':'声音设置';
@@ -343,8 +387,8 @@ function startBgm(restart=false){
 }
 function pauseBgm(reset=false){ bgm.pause(); if(reset)try{ bgm.currentTime=0; }catch(e){} }
 function playTowerShot(t){
-  const cfg={arrow:[.18,.94+Math.random()*.12,75],cannon:[.42,.94+Math.random()*.07,155],
-    frost:[.21,.9+Math.random()*.08,145],laser:[.3,.96+Math.random()*.06,120]}[t.key];
+  const cfg={arrow:[.18,.94+Math.random()*.12,100],cannon:[.42,.94+Math.random()*.07,180],
+    frost:[.21,.9+Math.random()*.08,180],laser:[.3,.96+Math.random()*.06,150]}[t.key];
   if(cfg)playSfx(t.key,cfg[0],cfg[1],cfg[2]);
 }
 function toggleAudioPanel(force){
@@ -365,8 +409,16 @@ document.getElementById('btnMuteAudio').onclick=()=>{
   audioPrefs.muted=!audioPrefs.muted; persistAudio(); applyAudioPrefs();
   if(!audioPrefs.muted){ startBgm(); playSfx('ui',.5,1.08,0); }
 };
+window.addEventListener('pointerdown',warmSfx,{once:true,capture:true});
+window.addEventListener('keydown',warmSfx,{once:true,capture:true});
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden)pauseBgm(false); else if(scene==='play'&&!state.paused&&!state.over)startBgm(false);
+  if(document.hidden){
+    pauseBgm(false); stopActiveSfx();
+    if(sfxContext&&sfxContext.state==='running')sfxContext.suspend().catch(()=>{});
+  }else{
+    if(sfxContext&&!audioPrefs.muted)sfxContext.resume().catch(()=>{});
+    if(scene==='play'&&!state.paused&&!state.over)startBgm(false);
+  }
 });
 applyAudioPrefs();
 // 星空背景（深空霞虹主题）
@@ -840,7 +892,7 @@ btnPause.onclick=()=>{
   if(scene!=='play'||state.over)return;
   state.paused=!state.paused;
   playSfx('ui',.35,state.paused?.78:1.08,35);
-  if(state.paused){ bannerT=0; document.getElementById('banner').style.opacity=0; pauseBgm(false); }
+  if(state.paused){ bannerT=0; document.getElementById('banner').style.opacity=0; pauseBgm(false); stopActiveSfx(); }
   else { banner('继续作战','#8fe3b0'); startBgm(false); }
   syncControls();
 };
@@ -1549,7 +1601,7 @@ function saveEndlessRun(reason,earned,achievements){
   save.endlessRuns=save.endlessRuns.slice(0,100);
 }
 function showMenu(){
-  scene='menu'; state.over=true; pauseBgm(true); toggleAudioPanel(false); document.getElementById('wrap').classList.remove('settle-mode');
+  scene='menu'; state.over=true; pauseBgm(true); stopActiveSfx(); toggleAudioPanel(false); document.getElementById('wrap').classList.remove('settle-mode');
   document.getElementById('wrap').classList.add('menu-mode'); buildMenu();
   for(const id of ['talent','over','endlessSelect','leaderboard'])document.getElementById(id).classList.remove('show');
   document.getElementById('menu').classList.add('show'); syncControls();
@@ -1569,7 +1621,7 @@ function backToMenu(){
 function endGame(win,reason='defeat'){
   if(state.over)return;
   state.over=true;
-  pauseBgm(false);
+  pauseBgm(false); stopActiveSfx();
   if(win){ playSfx('evolution',.9,1.35,0); setTimeout(()=>playSfx('upgrade',.62,1.35,0),180); }
   else if(reason==='retreat')playSfx('upgrade',.48,.82,0);
   else playSfx('boss',.75,.68,0);
