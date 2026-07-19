@@ -7,13 +7,15 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-user-select: none; user-select: none; }
   html, body { height: 100%; }
+  html { scrollbar-gutter:stable; }
   body {
     font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     background: radial-gradient(circle at 50% -10%, #1a2340 0%, #0a0e1a 60%);
-    color: #dfe6f5; display: flex; align-items: center; justify-content: center;
+    color: #dfe6f5; display: flex; align-items: flex-start; justify-content: center;
     min-height: 100%; padding: 12px; overflow-x: hidden;
   }
-  #wrap { display: flex; gap: 14px; align-items: flex-start; }
+  #wrap { display: flex; gap: 14px; align-items: flex-start;
+    margin-top:max(0px,calc((100dvh - 584px)/2)); }
   #wrap.menu-mode #panel { display: none; }
   #wrap.settle-mode #panel { display: none; }
   #stage { position: relative; border-radius: 14px; overflow: hidden; width: 640px; max-width: 100%;
@@ -53,7 +55,7 @@
   #btnMuteAudio { margin-top:4px; padding:7px; font-size:11px; }
   .audio-credit { margin-top:8px; color:#697da8; font-size:9px; line-height:1.4; text-align:center; }
   .audio-credit a { color:#7fa9d8; }
-  #panel { width: 224px; display: flex; flex-direction: column; gap: 10px; }
+  #panel { width:224px; flex:0 0 224px; min-width:0; display:flex; flex-direction:column; gap:10px; }
   #panelCols { display: flex; flex-direction: column; gap: 10px; }
   .card { background: rgba(22,30,54,.7); border: 1px solid rgba(120,150,220,.16);
     border-radius: 12px; padding: 12px; }
@@ -84,7 +86,7 @@
   #sel { min-height: 96px; }
   #selEmpty { color:#6f7fa6; font-size:12px; line-height:1.5; }
   .selrow { display:flex; justify-content:space-between; font-size:12px; margin:3px 0; }
-  .selrow span { color:#9aabd4; }
+  .selrow span { color:#9aabd4; min-width:0; overflow-wrap:anywhere; }
   .selrow b { color:#fff; }
   .branchTip { font-size:11px; color:#ffd76b; margin:6px 0 4px; font-weight:700; }
   .branch-btn { width:100%; text-align:left; padding:8px 10px; margin-bottom:6px; border-radius:9px;
@@ -149,8 +151,8 @@
   /* ===== 移动端适配 ===== */
   @media (max-width: 920px){
     body { align-items:flex-start; padding:8px; }
-    #wrap { flex-direction:column; gap:10px; width:100%; align-items:center; }
-    #panel { width:100%; max-width:640px; }
+    #wrap { flex-direction:column; gap:10px; width:100%; align-items:center; margin-top:0; }
+    #panel { width:100%; max-width:640px; flex:0 0 auto; }
     #shop { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
     #shop .tower-btn { margin-bottom:0; }
     #panelCols { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -700,7 +702,7 @@ cv.addEventListener('click', e=>{
   }
   if(picked){
     playSfx('ui',.28,1.06,45);
-    state.selTower=picked; state.selBuild=null; refreshShop(); renderSel(); return;
+    state.selTower=picked; state.selBuild=null; syncShopAvailability(); renderSel(); return;
   }
   if(state.selBuild){
     const cx=Math.floor(mx/CELL), cy=Math.floor((my-TOP)/CELL);
@@ -715,12 +717,12 @@ cv.addEventListener('click', e=>{
     state.towers.push(t);
     playSfx('build',.55,.96+Math.random()*.08,80);
     state.selTower=t; state.selBuild=null;   // 放置后自动退出建造模式，省去手动取消
-    renderSel(); refreshShop();
+    renderSel(); syncShopAvailability();
   } else { state.selTower=null; renderSel(); }
 });
 // 右键 / ESC 取消建造选择
-cv.addEventListener('contextmenu', e=>{ e.preventDefault(); if(state.selBuild){ state.selBuild=null; refreshShop(); } });
-window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ state.selBuild=null; state.selTower=null; refreshShop(); renderSel(); } });
+cv.addEventListener('contextmenu', e=>{ e.preventDefault(); if(state.selBuild){ state.selBuild=null; syncShopAvailability(); } });
+window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ state.selBuild=null; state.selTower=null; syncShopAvailability(); renderSel(); } });
 
 // ========== 商店 ==========
 const shop=document.getElementById('shop');
@@ -735,7 +737,7 @@ function refreshShop(){
     b.innerHTML=`<div class="tdot" style="background:${d.color};color:${d.color}"></div>
       <div class="tinfo"><div class="tn">${d.name}</div><div class="tc">${d.desc}</div></div>
       <div class="cost">💰${d.cost}</div>`;
-    b.onclick=()=>{ playSfx('ui',.35,1.02,35); state.selBuild=state.selBuild===k?null:k; state.selTower=null; refreshShop(); renderSel(); };
+    b.onclick=()=>{ playSfx('ui',.35,1.02,35); state.selBuild=state.selBuild===k?null:k; state.selTower=null; syncShopAvailability(); renderSel(); };
     shop.appendChild(b);
   }
 }
@@ -826,13 +828,13 @@ function renderSel(){
       state.gold-=c; t.spent+=c; t.lvl++;
       t.dmg*=1.32; t.range=Math.min(t.range+8,RANGE_CAP); t.cdMax=Math.max(t.cdMax*0.93,CD_FLOOR);
       playSfx('upgrade',.58,1+Math.min(.22,t.lvl*.012),70);
-      renderSel(); refreshShop();
+      renderSel(); syncShopAvailability();
     };
   }
   document.getElementById('btnSell').onclick=()=>{
     playSfx('ui',.42,.72,45);
     state.gold+=sell; state.towers=state.towers.filter(x=>x!==t);
-    state.selTower=null; renderSel(); refreshShop();
+    state.selTower=null; renderSel(); syncShopAvailability();
   };
 }
 function chooseBranch(t, i){
@@ -841,14 +843,14 @@ function chooseBranch(t, i){
   floatText(t.x,t.y-18,'▲ '+br.name, br.color);
   spawnBurst(t.x,t.y,br.color,16);
   playSfx('evolution',.72,1.02,90);
-  renderSel(); refreshShop();
+  renderSel(); syncShopAvailability();
 }
 function chooseEvolution(t,i){
   const route=evolutionLine(t)[i]; if(!route||t.evoTier>=2)return;
   t.evoPath=route.id; t.evoTier=2; route.apply(t); t.color=route.color; t.bullet=route.color;
   floatText(t.x,t.y-18,'◆ '+route.name,route.color); spawnBurst(t.x,t.y,route.color,24); ring(t.x,t.y,32,route.color);
   playSfx('evolution',.82,1.16,90);
-  renderSel(); refreshShop();
+  renderSel(); syncShopAvailability();
 }
 function evolveTower(t){
   const pending=pendingEvolution(t); if(!pending||pending.kind!=='final')return;
@@ -856,7 +858,7 @@ function evolveTower(t){
   floatText(t.x,t.y-18,'✦ '+evo.name,evo.color);
   spawnBurst(t.x,t.y,evo.color,t.evoTier===3?30:22); ring(t.x,t.y,t.evoTier===3?38:30,evo.color);
   playSfx('evolution',.95,1.32,90); playSfx('frost',.32,.78,90);
-  renderSel(); refreshShop();
+  renderSel(); syncShopAvailability();
 }
 
 // ========== 控制按钮 ==========
