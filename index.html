@@ -29,13 +29,30 @@
   .stat .ic { font-size: 14px; }
   .hp-bad b { color: #ff6b6b; }
   #uiMap { color:#8fd8ff; font-weight:700; }
-  #btnMenu { margin-left:auto; font-size:11px; padding:5px 10px; border-radius:8px;
+  #btnMenu { margin-left:auto; }
+  #btnMenu, #btnAudio { font-size:11px; padding:5px 10px; border-radius:8px;
     border:1px solid rgba(140,170,230,.3); background:rgba(40,52,86,.6); color:#cdd8f2; cursor:pointer; }
-  #btnMenu:hover { background:rgba(56,72,116,.8); }
+  #btnMenu:hover, #btnAudio:hover { background:rgba(56,72,116,.8); }
+  #btnAudio { width:34px; padding:5px 0; font-size:14px; }
   #banner { position: absolute; top: 46%; left: 50%; transform: translate(-50%,-50%);
     font-size: 34px; font-weight: 800; letter-spacing: 3px; text-align: center;
     text-shadow: 0 4px 24px rgba(0,0,0,.7); pointer-events: none; z-index: 8;
     opacity: 0; transition: opacity .4s; }
+  #audioPanel { position:absolute; z-index:40; top:52px; right:9px; width:244px; display:none;
+    padding:13px; border-radius:12px; color:#eaf1ff;
+    background:linear-gradient(145deg,rgba(20,29,53,.98),rgba(10,15,30,.98));
+    border:1px solid rgba(126,170,235,.32); box-shadow:0 16px 44px rgba(0,0,0,.55); }
+  #audioPanel.open { display:block; }
+  .audio-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .audio-head b { color:#b9d9ff; font-size:13px; letter-spacing:1px; }
+  #btnAudioClose { border:0; background:transparent; color:#92a5ca; cursor:pointer; font-size:19px; line-height:1; }
+  .audio-row { display:grid; grid-template-columns:43px 1fr 34px; gap:8px; align-items:center; margin:9px 0; }
+  .audio-row span { color:#b8c6e6; font-size:11px; }
+  .audio-row output { color:#8fe3b0; font-size:10px; text-align:right; font-variant-numeric:tabular-nums; }
+  .audio-row input { width:100%; accent-color:#6cc6ff; cursor:pointer; }
+  #btnMuteAudio { margin-top:4px; padding:7px; font-size:11px; }
+  .audio-credit { margin-top:8px; color:#697da8; font-size:9px; line-height:1.4; text-align:center; }
+  .audio-credit a { color:#7fa9d8; }
   #panel { width: 224px; display: flex; flex-direction: column; gap: 10px; }
   #panelCols { display: flex; flex-direction: column; gap: 10px; }
   .card { background: rgba(22,30,54,.7); border: 1px solid rgba(120,150,220,.16);
@@ -141,9 +158,11 @@
     #wrap.menu-mode #stage, #wrap.settle-mode #stage { min-height:calc(100dvh - 16px); }
   }
   @media (max-width: 560px){
-    #hud { gap:9px; padding:0 9px; font-size:12px; }
+    #hud { gap:7px; padding:0 7px; font-size:12px; }
     #hud .stat b { font-size:14px; }
-    #uiMap { max-width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #uiMap { max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #btnMenu { padding:5px 7px; }
+    #audioPanel { right:7px; width:min(244px,calc(100% - 14px)); }
     #banner { font-size:24px; letter-spacing:2px; }
     #menuList { grid-template-columns:1fr; }
     #endlessList { grid-template-columns:1fr; }
@@ -170,8 +189,16 @@
       <div class="stat"><span class="ic">🌊</span><b id="uiWave">0</b><span style="color:#6f7fa6" id="uiWaveMax">/∞</span></div>
       <div class="stat"><span class="ic">⭐</span><b id="uiScore">0</b></div>
       <button id="btnMenu" onclick="backToMenu()">选关</button>
+      <button id="btnAudio" type="button" aria-label="声音设置" title="声音设置">🔊</button>
     </div>
     <div id="banner"></div>
+    <div id="audioPanel" aria-hidden="true">
+      <div class="audio-head"><b>声音设置</b><button id="btnAudioClose" type="button" aria-label="关闭声音设置">×</button></div>
+      <label class="audio-row"><span>音乐</span><input id="bgmVolume" type="range" min="0" max="100" step="1"><output id="bgmVolumeValue">28%</output></label>
+      <label class="audio-row"><span>音效</span><input id="sfxVolume" type="range" min="0" max="100" step="1"><output id="sfxVolumeValue">68%</output></label>
+      <button class="act sec" id="btnMuteAudio" type="button">全部静音</button>
+      <div class="audio-credit">CC0 音效：<a href="https://kenney.nl/assets/sci-fi-sounds" target="_blank" rel="noopener">Kenney</a> · BGM：<a href="https://opengameart.org/content/dark-sci-fi-audio-pack" target="_blank" rel="noopener">SRG774</a></div>
+    </div>
 
     <!-- 选关 -->
     <div class="overlay show" id="menu">
@@ -181,6 +208,7 @@
       <div class="menu-actions">
         <button class="act sec" id="btnTalent" onclick="openTalent()">⭐ 转生天赋</button>
         <button class="act warn" id="btnRank" onclick="openLeaderboard('menu')">🏅 无尽战绩</button>
+        <button class="act sec" id="btnMenuAudio" onclick="toggleAudioPanel()">🔊 声音</button>
       </div>
     </div>
 
@@ -249,6 +277,98 @@
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height, TOP = 46, CELL = 40;
 const CD_FLOOR = 0.08, RANGE_CAP = 260;   // 无尽升级软上限，防数值畸形
+
+// ========== 声音系统（CC0 素材，设置独立持久化）==========
+const AUDIO_PREF_KEY='xingui_audio_v1';
+const AUDIO_ASSETS={
+  arrow:'assets/audio/arrow-shot.mp3', cannon:'assets/audio/cannon-blast.mp3',
+  frost:'assets/audio/frost-pulse.mp3', laser:'assets/audio/laser-beam.mp3',
+  build:'assets/audio/tower-build.mp3', boss:'assets/audio/boss-alert.mp3',
+  ui:'assets/audio/ui-click.mp3', upgrade:'assets/audio/upgrade.mp3', evolution:'assets/audio/evolution.mp3'
+};
+function loadAudioPrefs(){
+  const d={bgm:.28,sfx:.68,muted:false};
+  try{
+    const s=JSON.parse(localStorage.getItem(AUDIO_PREF_KEY));
+    if(s&&typeof s==='object'){
+      if(Number.isFinite(+s.bgm))d.bgm=Math.max(0,Math.min(1,+s.bgm));
+      if(Number.isFinite(+s.sfx))d.sfx=Math.max(0,Math.min(1,+s.sfx));
+      d.muted=!!s.muted;
+    }
+  }catch(e){}
+  return d;
+}
+let audioPrefs=loadAudioPrefs();
+const bgm=new Audio('assets/audio/star-pulse.mp3');
+bgm.loop=true; bgm.preload='auto'; bgm.volume=audioPrefs.muted?0:audioPrefs.bgm;
+const sfxPools={}, sfxCursor={}, sfxLast={};
+function persistAudio(){ try{ localStorage.setItem(AUDIO_PREF_KEY,JSON.stringify(audioPrefs)); }catch(e){} }
+function playSfx(id,gain=1,rate=1,minGap=0){
+  if(audioPrefs.muted||audioPrefs.sfx<=0||!AUDIO_ASSETS[id])return;
+  const now=performance.now();
+  if(now-(sfxLast[id]||0)<minGap)return;
+  sfxLast[id]=now;
+  if(!sfxPools[id]){
+    const size=id==='arrow'?5:3;
+    sfxPools[id]=Array.from({length:size},()=>{ const a=new Audio(AUDIO_ASSETS[id]); a.preload='auto'; return a; });
+    sfxCursor[id]=0;
+  }
+  const pool=sfxPools[id];
+  let a=pool.find(x=>x.paused||x.ended);
+  if(!a){ a=pool[sfxCursor[id]%pool.length]; sfxCursor[id]++; }
+  try{ a.currentTime=0; }catch(e){}
+  a.volume=Math.max(0,Math.min(1,audioPrefs.sfx*gain));
+  a.playbackRate=Math.max(.55,Math.min(1.8,rate));
+  if('preservesPitch' in a)a.preservesPitch=false;
+  a.play().catch(()=>{});
+}
+function applyAudioPrefs(){
+  bgm.volume=audioPrefs.muted?0:audioPrefs.bgm;
+  if(audioPrefs.muted)bgm.pause();
+  const icon=audioPrefs.muted||(!audioPrefs.bgm&&!audioPrefs.sfx)?'🔇':'🔊';
+  document.getElementById('btnAudio').textContent=icon;
+  document.getElementById('btnAudio').title=audioPrefs.muted?'声音已关闭':'声音设置';
+  document.getElementById('btnMenuAudio').textContent=icon+' 声音';
+  document.getElementById('bgmVolume').value=Math.round(audioPrefs.bgm*100);
+  document.getElementById('sfxVolume').value=Math.round(audioPrefs.sfx*100);
+  document.getElementById('bgmVolumeValue').textContent=Math.round(audioPrefs.bgm*100)+'%';
+  document.getElementById('sfxVolumeValue').textContent=Math.round(audioPrefs.sfx*100)+'%';
+  document.getElementById('btnMuteAudio').textContent=audioPrefs.muted?'恢复声音':'全部静音';
+}
+function startBgm(restart=false){
+  if(restart)try{ bgm.currentTime=0; }catch(e){}
+  applyAudioPrefs();
+  if(audioPrefs.muted||audioPrefs.bgm<=0||scene!=='play'||state.paused||state.over)return;
+  bgm.play().catch(()=>{});
+}
+function pauseBgm(reset=false){ bgm.pause(); if(reset)try{ bgm.currentTime=0; }catch(e){} }
+function playTowerShot(t){
+  const cfg={arrow:[.18,.94+Math.random()*.12,75],cannon:[.42,.94+Math.random()*.07,155],
+    frost:[.21,.9+Math.random()*.08,145],laser:[.3,.96+Math.random()*.06,120]}[t.key];
+  if(cfg)playSfx(t.key,cfg[0],cfg[1],cfg[2]);
+}
+function toggleAudioPanel(force){
+  const p=document.getElementById('audioPanel'), open=typeof force==='boolean'?force:!p.classList.contains('open');
+  p.classList.toggle('open',open); p.setAttribute('aria-hidden',String(!open));
+  if(open)playSfx('ui',.45,1.05,35);
+}
+document.getElementById('btnAudio').onclick=()=>toggleAudioPanel();
+document.getElementById('btnAudioClose').onclick=()=>toggleAudioPanel(false);
+document.getElementById('bgmVolume').addEventListener('input',e=>{
+  audioPrefs.bgm=+e.target.value/100; audioPrefs.muted=false; persistAudio(); applyAudioPrefs(); startBgm();
+});
+document.getElementById('sfxVolume').addEventListener('input',e=>{
+  audioPrefs.sfx=+e.target.value/100; audioPrefs.muted=false; persistAudio(); applyAudioPrefs();
+  playSfx('ui',.45,1.05,80);
+});
+document.getElementById('btnMuteAudio').onclick=()=>{
+  audioPrefs.muted=!audioPrefs.muted; persistAudio(); applyAudioPrefs();
+  if(!audioPrefs.muted){ startBgm(); playSfx('ui',.5,1.08,0); }
+};
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)pauseBgm(false); else if(scene==='play'&&!state.paused&&!state.over)startBgm(false);
+});
+applyAudioPrefs();
 // 星空背景（深空霞虹主题）
 const stars=[]; for(let i=0;i<90;i++){ stars.push({ x:Math.random()*W, y:TOP+Math.random()*(H-TOP),
   r:Math.random()*1.4+0.3, sp:0.4+Math.random()*1.6, ph:Math.random()*6.28, big:Math.random()<0.12 }); }
@@ -496,6 +616,7 @@ function startWave(){
   state.spawnTimer = 0; state.waveActive = true;
   syncControls();
   const isBoss = state.wave%5===0;
+  if(isBoss)playSfx('boss',.62,.82,600); else playSfx('upgrade',.28,1.08,350);
   banner((winWaves!==Infinity? '第 '+state.wave+' / '+winWaves+' 波':'第 '+state.wave+' 波')+(isBoss?' · BOSS':''), isBoss?'#ff6b8a':'#8fe3b0');
 }
 function spawnEnemy(def){
@@ -526,6 +647,7 @@ cv.addEventListener('click', e=>{
     if(d<pickRadius && d<pickedDist){ picked=t; pickedDist=d; }
   }
   if(picked){
+    playSfx('ui',.28,1.06,45);
     state.selTower=picked; state.selBuild=null; refreshShop(); renderSel(); return;
   }
   if(state.selBuild){
@@ -539,6 +661,7 @@ cv.addEventListener('click', e=>{
       lvl:1, cd:0, cdMax:def.cd, spent:def.cost, branch:null, evoTier:0, evoPath:null,
       ...JSON.parse(JSON.stringify(def)) };
     state.towers.push(t);
+    playSfx('build',.55,.96+Math.random()*.08,80);
     state.selTower=t; state.selBuild=null;   // 放置后自动退出建造模式，省去手动取消
     renderSel(); refreshShop();
   } else { state.selTower=null; renderSel(); }
@@ -560,7 +683,7 @@ function refreshShop(){
     b.innerHTML=`<div class="tdot" style="background:${d.color};color:${d.color}"></div>
       <div class="tinfo"><div class="tn">${d.name}</div><div class="tc">${d.desc}</div></div>
       <div class="cost">💰${d.cost}</div>`;
-    b.onclick=()=>{ state.selBuild=state.selBuild===k?null:k; state.selTower=null; refreshShop(); renderSel(); };
+    b.onclick=()=>{ playSfx('ui',.35,1.02,35); state.selBuild=state.selBuild===k?null:k; state.selTower=null; refreshShop(); renderSel(); };
     shop.appendChild(b);
   }
 }
@@ -650,10 +773,12 @@ function renderSel(){
       if(state.gold<c)return;
       state.gold-=c; t.spent+=c; t.lvl++;
       t.dmg*=1.32; t.range=Math.min(t.range+8,RANGE_CAP); t.cdMax=Math.max(t.cdMax*0.93,CD_FLOOR);
+      playSfx('upgrade',.58,1+Math.min(.22,t.lvl*.012),70);
       renderSel(); refreshShop();
     };
   }
   document.getElementById('btnSell').onclick=()=>{
+    playSfx('ui',.42,.72,45);
     state.gold+=sell; state.towers=state.towers.filter(x=>x!==t);
     state.selTower=null; renderSel(); refreshShop();
   };
@@ -663,12 +788,14 @@ function chooseBranch(t, i){
   t.branch=br.id; t.evoTier=1; t.evoPath=null; br.apply(t);
   floatText(t.x,t.y-18,'▲ '+br.name, br.color);
   spawnBurst(t.x,t.y,br.color,16);
+  playSfx('evolution',.72,1.02,90);
   renderSel(); refreshShop();
 }
 function chooseEvolution(t,i){
   const route=evolutionLine(t)[i]; if(!route||t.evoTier>=2)return;
   t.evoPath=route.id; t.evoTier=2; route.apply(t); t.color=route.color; t.bullet=route.color;
   floatText(t.x,t.y-18,'◆ '+route.name,route.color); spawnBurst(t.x,t.y,route.color,24); ring(t.x,t.y,32,route.color);
+  playSfx('evolution',.82,1.16,90);
   renderSel(); refreshShop();
 }
 function evolveTower(t){
@@ -676,6 +803,7 @@ function evolveTower(t){
   const evo=pending.evo; t.evoTier=3; evo.apply(t); t.color=evo.color; t.bullet=evo.color;
   floatText(t.x,t.y-18,'✦ '+evo.name,evo.color);
   spawnBurst(t.x,t.y,evo.color,t.evoTier===3?30:22); ring(t.x,t.y,t.evoTier===3?38:30,evo.color);
+  playSfx('evolution',.95,1.32,90); playSfx('frost',.32,.78,90);
   renderSel(); refreshShop();
 }
 
@@ -697,27 +825,30 @@ function syncControls(){
 }
 btnAuto.onclick=()=>{
   if(scene!=='play'||state.over)return;
+  playSfx('ui',.3,state.autoWave ? .88 : 1.08,35);
   state.autoWave=!state.autoWave; syncControls();
 };
 btnWave.onclick=()=>{
-  if(scene==='play'&&!state.paused&&!state.waveActive&&!state.over){ state.betweenTimer=0; startWave(); syncControls(); }
+  if(scene==='play'&&!state.paused&&!state.waveActive&&!state.over){ playSfx('ui',.32,1.1,35); state.betweenTimer=0; startWave(); syncControls(); }
 };
 btnSpeed.onclick=()=>{
   if(scene!=='play'||state.over)return;
+  playSfx('ui',.28,1+.1*(state.speed===1?1:state.speed===2?2:0),35);
   state.speed=state.speed===1?2:state.speed===2?4:1; syncControls();
 };
 btnPause.onclick=()=>{
   if(scene!=='play'||state.over)return;
   state.paused=!state.paused;
-  if(state.paused){ bannerT=0; document.getElementById('banner').style.opacity=0; }
-  else banner('继续作战','#8fe3b0');
+  playSfx('ui',.35,state.paused?.78:1.08,35);
+  if(state.paused){ bannerT=0; document.getElementById('banner').style.opacity=0; pauseBgm(false); }
+  else { banner('继续作战','#8fe3b0'); startBgm(false); }
   syncControls();
 };
 
 // ========== 提示 ==========
 let bannerT=0;
 function banner(txt,col){ const b=document.getElementById('banner'); b.textContent=txt; b.style.color=col||'#fff'; b.style.opacity=1; bannerT=1.4; }
-function flash(txt){ banner(txt,'#ff9d9d'); bannerT=0.9; }
+function flash(txt){ playSfx('ui',.3,.7,120); banner(txt,'#ff9d9d'); bannerT=0.9; }
 function floatText(x,y,txt,col){ state.floats.push({x,y,txt,col,life:0.9}); }
 
 // ========== 循环 ==========
@@ -752,6 +883,7 @@ function update(dt){
       state.waveActive=false;
       const bonus=15+state.wave*4; state.gold+=bonus; state.score+=state.wave*10;
       floatText(W/2,H/2,'波次奖励 +'+bonus,'#ffd76b'); syncShopAvailability();
+      playSfx('upgrade',.38,1.18,350);
       if(winWaves!==Infinity && state.wave>=winWaves){ victory(); return; }
       state.betweenTimer = state.autoWave?3:99999;
       syncControls();
@@ -788,6 +920,7 @@ function update(dt){
     if(e.seg>=waypoints.length-1){
       e.dead=true; state.hp=Math.max(0,state.hp-e.leak); state.leaks++;
       floatText(e.x,e.y,'-'+e.leak+'❤️','#ff6b6b'); spawnBurst(e.x,e.y,e.col,8);
+      playSfx('boss',e.type==='boss' ? .62 : .22,e.type==='boss' ? .72 : 1.25,420);
       if(state.hp<=0){ gameOver(); return; }
     }
   }
@@ -818,6 +951,7 @@ function update(dt){
         brittle:t.brittle||0, brittleDur:t.brittleDur||0,
         clusterCount:t.clusterCount||0, clusterFactor:t.clusterFactor||0,
         pierce:t.pierce||0, chainRange:t.chainRange||95, hitset:new Set() });
+      playTowerShot(t);
       spawnMuzzle(t);
     }
   }
@@ -1375,12 +1509,15 @@ function startGame(idx,endless=false){
   state.hp   = 20  + save.tal.fort*3;
   state.startHp=state.hp; state.isEndless=endless;
   scene='play';
+  playSfx('ui',.38,1.12,45);
+  toggleAudioPanel(false);
   document.getElementById('wrap').classList.remove('menu-mode','settle-mode');
   for(const id of ['menu','talent','over','endlessSelect','leaderboard'])document.getElementById(id).classList.remove('show');
   document.getElementById('uiMap').textContent=MAP.name;
   document.getElementById('uiWaveMax').textContent = winWaves===Infinity?'/∞':'/'+winWaves;
   document.getElementById('idle').textContent='';
   refreshShop(); renderSel(); syncHud(); syncControls();
+  startBgm(true);
   banner(MAP.name, '#8fd8ff');
 }
 function recordRun(){
@@ -1412,7 +1549,7 @@ function saveEndlessRun(reason,earned,achievements){
   save.endlessRuns=save.endlessRuns.slice(0,100);
 }
 function showMenu(){
-  scene='menu'; state.over=true; document.getElementById('wrap').classList.remove('settle-mode');
+  scene='menu'; state.over=true; pauseBgm(true); toggleAudioPanel(false); document.getElementById('wrap').classList.remove('settle-mode');
   document.getElementById('wrap').classList.add('menu-mode'); buildMenu();
   for(const id of ['talent','over','endlessSelect','leaderboard'])document.getElementById(id).classList.remove('show');
   document.getElementById('menu').classList.add('show'); syncControls();
@@ -1432,6 +1569,10 @@ function backToMenu(){
 function endGame(win,reason='defeat'){
   if(state.over)return;
   state.over=true;
+  pauseBgm(false);
+  if(win){ playSfx('evolution',.9,1.35,0); setTimeout(()=>playSfx('upgrade',.62,1.35,0),180); }
+  else if(reason==='retreat')playSfx('upgrade',.48,.82,0);
+  else playSfx('boss',.75,.68,0);
   const earned = Math.floor(state.kills/10) + (win?10:0);
   const achievements=runAchievements();
   save.stars += earned;
