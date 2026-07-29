@@ -187,17 +187,21 @@ function defenderPower(s,targetId){const t=s.territories[targetId],owner=t.owner
 function estimateBattle(s,targetId,leaderIds,troops,tactic){const leaders=leaderIds.map(id=>officer(s,id)).filter(Boolean),meta=tacticMeta(tactic);let power=troops*(.82+s.morale*.0048)+leaders.reduce((sum,o)=>sum+leaderScore(o,tactic),0)+(s.training||0)*.7;power*=meta.power*officerTraitPower(s,leaders,tactic);if(tactic==="ambush"&&!s.intel[targetId])power*=.78;const def=defenderPower(s,targetId).power,ratio=power/def;return{power,def,ratio,label:ratio>=1.28?"优势":ratio>=.88?"胶着":ratio>=.68?"凶险":"九死一生"}}
 
 // ---- 三段式血拼 ----
-// STAGE_SWING 与旧版单骰方差挂钩：旧版 U(0.84,1.18) 的 sd=0.098，三段取平均会把方差压掉 √3，
-// 故每段必须放宽到 0.295，三段平均后总波动才与旧版一致。改这个数会直接改难度曲线。
+// STAGE_SWING 校准自旧版单骰：U(0.84,1.18) 的 sd≈0.098；三段取平均会把方差压掉 √3，
+// 故每段放宽到 0.295 才能让三段平均后的 sd 对齐。注意只有 sd 对齐——胜率曲线并不完全相同：
+// 旧版均值是 1.01 且 1.18 的硬上限让 ratio<0.847 必败，新版该悬崖移到 0.772，
+// 中段（ratio≈0.95）胜率约低 7 个百分点。改这个数会直接改难度曲线。
 const STAGE_SWING=.295;
 const STAGE_NAMES=["开局","僵持","决胜"];
 
 function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
+  if(s.battleSession)throw new Error("battle in progress");
   if(!attackableTerritories(s).includes(targetId))throw new Error("target not attackable");
   if(s.crew<10)throw new Error("not enough crew");
-  const leaders=leaderIds.map(id=>officer(s,id)).filter(o=>o&&o.side==="player"&&!o.injured).slice(0,3);
+  const leaders=[...new Set(leaderIds)].map(id=>officer(s,id)).filter(o=>o&&o.side==="player"&&!o.injured).slice(0,3);
   if(!leaders.length)throw new Error("no leaders");
   troops=clamp(Math.round(troops),10,s.crew);
+  if(!Number.isFinite(troops))throw new Error("invalid troops");
   const ids=leaders.map(o=>o.id),est=estimateBattle(s,targetId,ids,troops,tactic);
   const mods={multRest:1,moraleFloor:0,convertRate:0,pressed:false,retreatShield:false};
   if(ids.includes("player"))mods.moraleFloor=45;                                  // 沈川「沈家之后」
