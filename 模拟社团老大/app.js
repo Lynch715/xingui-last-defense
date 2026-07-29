@@ -212,19 +212,20 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
 }
 
 // 纯函数：同一 (s,session) 必须永远返回同样的选项，刷新后才能按存档重建界面。
-// 压上/稳住/鸣金三项恒定保留（自动战斗依赖 hold 恒在），专属提议最多 2 条，总上限 5。
+// 压上/稳住/鸣金三项恒定保留（自动战斗依赖 hold 恒在），专属提议按 priority 降序取前 2，总上限 5。
+// 选项是开放字段包：{id,mult,casualtyMult} 必填，speaker/text/effect/priority/convert 可选。
+function lineupOfficer(s,session,id){const o=session.leaderIds.includes(id)?officer(s,id):null;return o&&o.side==="player"&&!o.injured?o:null}
 function stageOptions(s,session){
-  const inLineup=id=>session.leaderIds.includes(id)&&!!officer(s,id)&&!officer(s,id).injured;
-  const zk=inLineup("zhaokui")?officer(s,"zhaokui"):null;
+  const zk=lineupOfficer(s,session,"zhaokui");
   const out=[
-    {id:"press",speaker:zk?"赵魁":"",text:zk?"「压上去，别给他们喘气」":"压上去",effect:"势↑↑ 伤亡↑↑",mult:zk?1.15+zk.stats.force/1200:1.15,casualty:1.3},
-    {id:"hold",speaker:"",text:"稳住阵型",effect:"势— 伤亡↓",mult:1,casualty:.85}
+    {id:"press",speaker:zk?"赵魁":"",text:zk?"「压上去，别给他们喘气」":"压上去",effect:"势↑↑ 伤亡↑↑",mult:zk?1.15+zk.stats.force/1200:1.15,casualtyMult:1.3},
+    {id:"hold",speaker:"",text:"稳住阵型",effect:"势— 伤亡↓",mult:1,casualtyMult:.85}
   ];
-  out.push(...officerProposals(s,session,inLineup).slice(0,2));
-  if(session.stage>=2)out.push({id:"withdraw",speaker:inLineup("sumanqing")?"苏曼青":"",text:"鸣金收兵",effect:"保住剩下的人，此战作罢",mult:1,casualty:0});
+  out.push(...officerProposals(s,session).slice().sort((a,b)=>(b.priority||0)-(a.priority||0)).slice(0,2));
+  if(session.stage>=2)out.push({id:"withdraw",speaker:lineupOfficer(s,session,"sumanqing")?"苏曼青":"",text:"鸣金收兵",effect:"保住剩下的人，此战作罢",mult:1,casualtyMult:0});
   return out;
 }
-function officerProposals(s,session,inLineup){return[]}
+function officerProposals(s,session){return[]}
 
 function resolveBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   if(!attackableTerritories(s).includes(targetId))throw new Error("target not attackable");
@@ -267,7 +268,7 @@ function chooseRandomEvent(s,rng=Math.random){const valid=RANDOM_EVENTS.filter(e
 function checkPromises(s){if(s.flags.warPromise&&s.month>s.flags.warPromise&&s.lastBattleMonth<s.flags.warPromise-2){s.flags.warPromise=0;loyalty(s,"zhaokui",-14);resent(s,"zhaokui",18);change(s,"morale",-8);log(s,"bad","你没有兑现对赵魁的开战承诺。")}}
 function officerTension(s){ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{if(o.resentment>=70&&o.loyalty<45&&chance(.2)){o.side="defected";s.crew=Math.max(1,s.crew-8);change(s,"morale",-10);log(s,"bad",`${o.name}带着8个人离开了和联胜。`)}else if(o.loyalty<35)change(s,"morale",-1)})}
 
-function advanceMonth(s,force=false){if(s.ended)return false;if(s.ap>0&&!force){enqueue({title:"本月还有行动点",body:`<p>还剩 <b>${s.ap}</b> 个行动点。它们不会带到下个月。</p>`,options:[option("继续安排","回到议事堂",()=>{}),option("直接进入下月","放弃剩余行动点",()=>setTimeout(()=>advanceMonth(s,true),80),"danger")]},"时间确认");return false}
+function advanceMonth(s,force=false){if(s.battleSession){toast("先把这场血拼打完");return false}if(s.ended)return false;if(s.ap>0&&!force){enqueue({title:"本月还有行动点",body:`<p>还剩 <b>${s.ap}</b> 个行动点。它们不会带到下个月。</p>`,options:[option("继续安排","回到议事堂",()=>{}),option("直接进入下月","放弃剩余行动点",()=>setTimeout(()=>advanceMonth(s,true),80),"danger")]},"时间确认");return false}
   s.month++;s.ap=3;s.usedActions={};s.lastAction=null;applyEconomy(s);checkInsolvency(s);ownedOfficers(s).forEach(o=>{if(o.injured>0){o.injured--;if(o.injured===0)log(s,"good",`${o.name}伤愈回到了祖堂。`)}if(o.exp>=10){const k=pick(Object.keys(o.stats));o.stats[k]=clamp(o.stats[k]+1,1,99);o.exp-=10}});change(s,"morale",Math.round((58-s.morale)*.18));change(s,"heat",-2);refreshRecruitMarket(s);enemyGrowth(s);maybeUnlockNamed(s);checkPromises(s);officerTension(s);enemyAttack(s);
   // 老街在反扑里失守会当场结束这一局，别再往队列里塞这个月的剧情弹窗。
   if(s.ended){saveGame();renderAll();pumpModal();return true}

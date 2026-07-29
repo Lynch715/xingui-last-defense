@@ -96,16 +96,40 @@ nolead.crew=120;
 assert.throws(()=>game.startBattle(nolead,{targetId:"south_dock",leaderIds:["hewanshan"],troops:60,tactic:"steady"}),/no leaders/);
 assert.throws(()=>game.startBattle(nolead,{targetId:"south_dock",leaderIds:["player"],troops:undefined,tactic:"steady"}),/invalid troops/);
 
+const stateBefore=JSON.stringify(bs);
 const opt1=game.stageOptions(bs,sess);
-assert.deepEqual(opt1,game.stageOptions(bs,sess),"stageOptions 必须幂等，否则刷新后重建界面会变");
-assert.ok(opt1.some(o=>o.id==="press"));
+assert.equal(JSON.stringify(bs),stateBefore,"stageOptions 必须无副作用");
+assert.deepEqual(opt1,game.stageOptions(bs,sess),"stageOptions 必须幂等");
+// 幂等的真正用途是刷新后重建界面，所以要按 JSON 往返验证
+const revived=JSON.parse(JSON.stringify(bs));
+assert.deepEqual(game.stageOptions(revived,revived.battleSession),opt1,"存档往返后选项必须一致");
+assert.ok(opt1.every(o=>Number.isFinite(o.mult)&&Number.isFinite(o.casualtyMult)),"每个选项都要有可用的 mult 和 casualtyMult");
+const press1=opt1.find(o=>o.id==="press");
+assert.equal(press1.speaker,"赵魁","赵魁在阵时由他喊话");
+assert.ok(press1.mult>1.15,"赵魁在阵时压上威力更高");
 assert.ok(opt1.some(o=>o.id==="hold"));
 assert.ok(!opt1.some(o=>o.id==="withdraw"),"第1段不给鸣金");
+// 赵魁受伤后应退回通用文案与基础威力
+bs.officers.find(o=>o.id==="zhaokui").injured=2;
+const hurt=game.stageOptions(bs,sess).find(o=>o.id==="press");
+assert.equal(hurt.speaker,"","赵魁受伤后不再喊话");
+assert.equal(hurt.mult,1.15);
+// 已出走的头目不得继续提议
+bs.officers.find(o=>o.id==="zhaokui").injured=0;
+bs.officers.find(o=>o.id==="zhaokui").side="defected";
+assert.equal(game.stageOptions(bs,sess).find(o=>o.id==="press").speaker,"","出走的头目不得继续参战提议");
+bs.officers.find(o=>o.id==="zhaokui").side="player";
 sess.stage=2;
 assert.ok(game.stageOptions(bs,sess).some(o=>o.id==="withdraw"),"第2段起必须有鸣金");
 assert.ok(game.stageOptions(bs,sess).length<=5);
 assert.ok(game.stageOptions(bs,sess).some(o=>o.id==="hold"),"稳住必须恒在，自动战斗依赖它");
 sess.stage=1;
+// 月度推进不得在血拼进行中发生
+const midFight=game.createInitialState("沈月中","yi","standard");
+midFight.crew=120;
+game.startBattle(midFight,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+assert.equal(game.advanceMonth(midFight,true),false,"血拼进行中不得推进月份");
+assert.equal(midFight.month,0);
 
 s.cash=200;
 const candidate=s.recruitMarket[0];
