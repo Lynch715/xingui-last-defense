@@ -187,13 +187,15 @@ assert.equal(fin.winStreak,1,"胜场连胜计数");
 assert.equal(fr.stages.length,3,"三段战报来自真实判定");
 assert.equal(fin.lastBattle,fr);
 
-// 平衡回归：势必须真的响应兵力差。用测试文件里已有的 seeded LCG 跑蒙特卡洛。
+// 平衡回归：势必须真的响应兵力差。
+// 注意必须用「一条连续的随机流」，不能每局 seeded(seed+k) 重开：LCG 相邻种子的首个输出只差
+// 1664525/2^32≈0.0004，那样 150 局的开局骰子几乎完全相同，是格点取样而非蒙特卡洛，尾部永远取不到。
 function winRate(troops,seed,n){
-  let w=0;
+  let w=0;const rng=seeded(seed);
   for(let k=0;k<n;k++){
     const t=game.createInitialState("沈平衡","yi","standard");
     t.crew=400;t.morale=62;t.territories.south_dock.guard=46;
-    if(game.resolveBattle(t,{targetId:"south_dock",leaderIds:["player","zhaokui","chengye"],troops,tactic:"steady"},seeded(seed+k)).won)w++;
+    if(game.resolveBattle(t,{targetId:"south_dock",leaderIds:["player","zhaokui","chengye"],troops,tactic:"steady"},rng).won)w++;
   }
   return w/n;
 }
