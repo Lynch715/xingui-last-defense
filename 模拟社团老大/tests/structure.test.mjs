@@ -254,4 +254,60 @@ assert.equal(advancing.ap,3);
 assert.ok(advancing.cash>beforeCash);
 assert.equal(advancing.recruitMarket.length,3);
 
+// 把一名命名头目以我方身份塞进队伍（后续任务复用）
+function joinNamed(state,id){
+  const d=game.CHARACTER_DEFS[id];
+  state.officers.push({id,name:d.name,side:"player",role:d.role,type:d.type,portrait:d.portrait,
+    stats:{...d.stats},trait:d.trait,traitText:d.traitText,loyalty:70,resentment:0,merit:0,
+    injured:0,exp:0,battles:0,wins:0,named:true});
+  return state;
+}
+// quitAt=2 表示第2段鸣金；quitAt=0 表示打满三段
+function runBattle(quitAt,extraLeader){
+  const g=game.createInitialState("沈撤退","yi","standard");
+  g.crew=200;g.morale=70;
+  if(extraLeader)joinNamed(g,extraLeader);
+  const ids=["player","zhaokui"];if(extraLeader)ids[1]=extraLeader;
+  const rng=()=>.5;
+  game.startBattle(g,{targetId:"south_dock",leaderIds:ids,troops:120,tactic:"steady"},rng);
+  for(let stage=1;stage<=3&&g.battleSession;stage++){
+    game.applyStageChoice(g,quitAt===stage?"withdraw":"hold",rng);
+  }
+  return g;
+}
+const quit=runBattle(2),full=runBattle(0);
+assert.equal(quit.lastBattle.outcome,"retreat");
+assert.ok(full.lastBattle,"打满三段必须结算出战报");
+assert.ok(quit.lastBattle.losses<full.lastBattle.losses,"第2段鸣金的伤亡必须严格小于打满三段");
+assert.notEqual(quit.territories.south_dock.owner,"player","撤退不夺地");
+assert.equal(quit.morale,64,"撤退士气 70-6=64");
+assert.equal(quit.battleSession,null,"撤退后必须清空会话");
+assert.equal(quit.losses,0,"撤退不计入败场");
+assert.equal(quit.winStreak,0,"撤退中断连胜");
+
+// 叶蓉在阵：撤退不掉士气（经营属性首次在战场上生效）
+const shielded=runBattle(2,"yerong");
+assert.equal(shielded.lastBattle.outcome,"retreat");
+assert.equal(shielded.morale,70,"叶蓉在阵撤退不掉士气");
+
+// 听了赵魁「压上去」之后又收手，他会记仇
+const pressedQuit=game.createInitialState("沈食言","yi","standard");
+pressedQuit.crew=200;
+const pq=()=>.5;
+game.startBattle(pressedQuit,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:120,tactic:"steady"},pq);
+game.applyStageChoice(pressedQuit,"press",pq);
+const zkResentBefore=pressedQuit.officers.find(o=>o.id==="zhaokui").resentment;
+game.applyStageChoice(pressedQuit,"withdraw",pq);
+assert.equal(pressedQuit.officers.find(o=>o.id==="zhaokui").resentment,zkResentBefore+8,"听了赵魁又临阵收手，怨气+8");
+
+// 全程稳住再撤退则不该记仇
+const calmQuit=game.createInitialState("沈稳撤","yi","standard");
+calmQuit.crew=200;
+const cq=()=>.5;
+game.startBattle(calmQuit,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:120,tactic:"steady"},cq);
+game.applyStageChoice(calmQuit,"hold",cq);
+const calmBefore=calmQuit.officers.find(o=>o.id==="zhaokui").resentment;
+game.applyStageChoice(calmQuit,"withdraw",cq);
+assert.equal(calmQuit.officers.find(o=>o.id==="zhaokui").resentment,calmBefore,"没喊过压上就不该记仇");
+
 console.log("structure and core-loop tests passed");
