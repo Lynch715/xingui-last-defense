@@ -359,4 +359,37 @@ assert.ok(game.stageOptions(rear,rear.battleSession).some(o=>o.id==="rearguard")
 game.applyStageChoice(rear,"rearguard",()=>.5);
 assert.equal(rear.officers.find(o=>o.id==="aqi").exp,aqiExpBefore+3,"断后让阿七多长3点经验");
 
+// joinNamed 在 Task 5 已定义并会先剔除同 id 的既有条目（韩彪等本来是敌方头目）
+const duel=joinNamed(game.createInitialState("沈单挑","wei","standard"),"hanbiao");
+duel.crew=200;
+game.startBattle(duel,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:100,tactic:"assault"});
+assert.ok(game.stageOptions(duel,duel.battleSession).some(o=>o.id==="duel"),"敌方有高武力头目时应给出单挑");
+game.applyStageChoice(duel,"duel",()=>.01);   // rng 极小 -> 单挑必胜
+assert.ok(duel.battleSession.mods.multRest>1,"单挑胜利提高后续段的势");
+assert.ok(duel.battleSession.log[0].text.includes("韩彪"),"单挑要写进战报");
+assert.ok(duel.officers.some(o=>o.side==="east"&&o.injured>0),"败方头目应受伤");
+assert.ok(duel.officers.find(o=>o.id==="hanbiao").merit>=8,"单挑胜者记功");
+
+// 单挑落败：自己人受伤、后续段变差、士气下降
+const lost=joinNamed(game.createInitialState("沈落败","wei","standard"),"hanbiao");
+lost.crew=200;lost.morale=70;
+game.startBattle(lost,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:100,tactic:"assault"});
+game.applyStageChoice(lost,"duel",()=>.999);  // rng 极大 -> 单挑必败
+assert.ok(lost.battleSession.mods.multRest<1,"单挑落败拖累后续段");
+assert.ok(lost.officers.find(o=>o.id==="hanbiao").injured>0,"落败者受伤");
+assert.equal(lost.morale,65,"单挑落败士气 -5（70-5=65），再无其他士气变动");
+
+// 韩彪不在阵时赵魁也能单挑，但没有 +0.15 加成
+const noHan=game.createInitialState("沈无韩","wei","standard");
+noHan.crew=200;
+game.startBattle(noHan,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:100,tactic:"assault"});
+assert.ok(game.stageOptions(noHan,noHan.battleSession).some(o=>o.id==="duel"),"赵魁也能发起单挑");
+
+// 敌方全员受伤后不再提供单挑
+const noFoe=joinNamed(game.createInitialState("沈无敵","wei","standard"),"hanbiao");
+noFoe.crew=200;
+game.startBattle(noFoe,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:100,tactic:"assault"});
+noFoe.officers.filter(o=>o.side==="east").forEach(o=>{o.injured=2});
+assert.ok(!game.stageOptions(noFoe,noFoe.battleSession).some(o=>o.id==="duel"),"敌方无可战头目时不给单挑");
+
 console.log("structure and core-loop tests passed");

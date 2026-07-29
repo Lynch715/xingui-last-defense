@@ -247,6 +247,16 @@ function officerProposals(s,session){
 // 对手取敌方未受伤头目里武力最高者，并要求 force>=60——否则全局只有韩彪算猛将，单挑几乎不会出现。
 function duelTarget(s,session){return factionLeaders(s,s.territories[session.targetId].owner).filter(o=>o.stats.force>=60).sort((a,b)=>b.stats.force-a.stats.force)[0]||null}
 function duelChallenger(s,session){return["hanbiao","zhaokui","xiejiu"].map(id=>lineupOfficer(s,session,id)).filter(Boolean).sort((a,b)=>b.stats.force-a.stats.force)[0]||null}
+function resolveDuel(s,session,rng){
+  const me=duelChallenger(s,session),foe=duelTarget(s,session);
+  if(!me||!foe)return"";
+  let p=.5+(me.stats.force-foe.stats.force)/200;
+  if(lineupOfficer(s,session,"hanbiao"))p+=.15;                    // 韩彪「顶门硬骨」：压住对方猛将
+  p=clamp(p,.15,.85);                                              // 加成后再夹取，上限不被突破
+  if(chance(p,rng)){foe.injured=rand(1,3,rng);session.mods.multRest*=1.25;me.merit+=8;return`${me.name}把${foe.name}逼到了墙角。`}
+  me.injured=rand(1,3,rng);session.mods.multRest*=.85;change(s,"morale",-5);
+  return`${me.name}没能压住${foe.name}，被抬了下去。`;
+}
 function stageLoss(s,session,stageOk,casualtyMult,rng){
   const meta=tacticMeta(session.tactic),morale=Math.max(s.morale,session.mods.moraleFloor);
   let rate=(stageOk?.12:.25)*meta.casualty*(1+(50-morale)/150)*casualtyMult;
@@ -269,6 +279,7 @@ function applyStageChoice(s,optionId,rng=Math.random){
   if(opt.id==="backdoor"){s.intel[session.targetId]=true;extra=`魏小楼把${TERRITORY_DEFS[session.targetId].name}的真实驻防摊在了你面前。`}
   if(opt.id==="parley")session.mods.convertRate=opt.convert;
   if(opt.id==="rearguard"){const a=officer(s,"aqi");if(a)a.exp+=3}
+  if(opt.id==="duel")extra=resolveDuel(s,session,rng);
   const u=1-STAGE_SWING+rng()*STAGE_SWING*2;
   const delta=(session.ratio*u*(opt.mult??1)*session.mods.multRest-1)*33.3;
   session.momentum=Math.round((session.momentum+delta)*10)/10;
