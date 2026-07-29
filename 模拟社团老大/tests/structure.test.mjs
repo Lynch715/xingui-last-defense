@@ -96,6 +96,17 @@ nolead.crew=120;
 assert.throws(()=>game.startBattle(nolead,{targetId:"south_dock",leaderIds:["hewanshan"],troops:60,tactic:"steady"}),/no leaders/);
 assert.throws(()=>game.startBattle(nolead,{targetId:"south_dock",leaderIds:["player"],troops:undefined,tactic:"steady"}),/invalid troops/);
 
+const opt1=game.stageOptions(bs,sess);
+assert.deepEqual(opt1,game.stageOptions(bs,sess),"stageOptions 必须幂等，否则刷新后重建界面会变");
+assert.ok(opt1.some(o=>o.id==="press"));
+assert.ok(opt1.some(o=>o.id==="hold"));
+assert.ok(!opt1.some(o=>o.id==="withdraw"),"第1段不给鸣金");
+sess.stage=2;
+assert.ok(game.stageOptions(bs,sess).some(o=>o.id==="withdraw"),"第2段起必须有鸣金");
+assert.ok(game.stageOptions(bs,sess).length<=5);
+assert.ok(game.stageOptions(bs,sess).some(o=>o.id==="hold"),"稳住必须恒在，自动战斗依赖它");
+sess.stage=1;
+
 s.cash=200;
 const candidate=s.recruitMarket[0];
 assert.ok(candidate);

@@ -211,6 +211,21 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   return s.battleSession;
 }
 
+// 纯函数：同一 (s,session) 必须永远返回同样的选项，刷新后才能按存档重建界面。
+// 压上/稳住/鸣金三项恒定保留（自动战斗依赖 hold 恒在），专属提议最多 2 条，总上限 5。
+function stageOptions(s,session){
+  const inLineup=id=>session.leaderIds.includes(id)&&!!officer(s,id)&&!officer(s,id).injured;
+  const zk=inLineup("zhaokui")?officer(s,"zhaokui"):null;
+  const out=[
+    {id:"press",speaker:zk?"赵魁":"",text:zk?"「压上去，别给他们喘气」":"压上去",effect:"势↑↑ 伤亡↑↑",mult:zk?1.15+zk.stats.force/1200:1.15,casualty:1.3},
+    {id:"hold",speaker:"",text:"稳住阵型",effect:"势— 伤亡↓",mult:1,casualty:.85}
+  ];
+  out.push(...officerProposals(s,session,inLineup).slice(0,2));
+  if(session.stage>=2)out.push({id:"withdraw",speaker:inLineup("sumanqing")?"苏曼青":"",text:"鸣金收兵",effect:"保住剩下的人，此战作罢",mult:1,casualty:0});
+  return out;
+}
+function officerProposals(s,session,inLineup){return[]}
+
 function resolveBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   if(!attackableTerritories(s).includes(targetId))throw new Error("target not attackable");
   if(s.crew<10)throw new Error("not enough crew");
@@ -335,4 +350,4 @@ function lockZoom(){["gesturestart","gesturechange","gestureend"].forEach(t=>doc
 function boot(){lockZoom();const saved=loadGame();$("newGameBtn")?.addEventListener("click",showCreator);$("continueBtn")?.addEventListener("click",()=>{S=loadGame();showGame()});$("creedPicker")?.querySelectorAll("[data-creed]").forEach(b=>b.addEventListener("click",()=>{creatorCreed=b.dataset.creed;$("creedPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("difficultyPicker")?.querySelectorAll("[data-difficulty]").forEach(b=>b.addEventListener("click",()=>{creatorDifficulty=b.dataset.difficulty;$("difficultyPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("startGameBtn")?.addEventListener("click",()=>{S=createInitialState($("playerName").value,creatorCreed,creatorDifficulty);prologueIndex=0;$("creator").classList.add("hidden");$("prologue").classList.remove("hidden");renderPrologue()});$("nextPrologueBtn")?.addEventListener("click",()=>{if(prologueIndex<PROLOGUE.length-1){prologueIndex++;renderPrologue()}else showGame()});$("gameNav")?.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{if(!S){showMenu();return}S.tab=b.dataset.tab;saveGame();renderAll()}));$("endMonthBtn")?.addEventListener("click",()=>S&&advanceMonth(S));$("saveBtn")?.addEventListener("click",()=>{if(saveGame())toast("进度已保存在本机")});$("restartBtn")?.addEventListener("click",()=>{if(confirm("删除当前存档并重新开始？")){deleteSave();S=null;showMenu()}});showMenu();if(saved&&saved.ended){S=saved}}
 
 if(typeof document!=="undefined")document.addEventListener("DOMContentLoaded",boot);
-if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
+if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
