@@ -133,17 +133,38 @@ assert.equal(midFight.month,0);
 
 const adv=game.createInitialState("沈推进","yi","standard");
 adv.crew=120;
-game.startBattle(adv,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:60,tactic:"steady"});
-const crewBefore=adv.crew;
-const r1=game.applyStageChoice(adv,"hold",()=>.5);
+const advSess=game.startBattle(adv,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:60,tactic:"steady"});
+const advRatio=advSess.ratio,crewBefore=adv.crew;
+const r1=game.applyStageChoice(adv,"hold",()=>.5);      // rng=.5 -> u=1.0
 assert.equal(r1.ended,false);
 assert.equal(adv.battleSession.stage,2,"打完一段进入第2段");
-assert.notEqual(adv.battleSession.momentum,0,"势必须发生变化");
-assert.ok(adv.crew<crewBefore,"伤亡必须逐段扣，存档任何时刻都自洽");
-assert.ok(adv.battleSession.losses>0);
+assert.equal(adv.battleSession.momentum,Math.round((advRatio-1)*33.3*10)/10,"势必须等于闭式解，不能只断言变了");
+assert.equal(crewBefore-adv.crew,adv.battleSession.losses,"扣的人必须与记录的伤亡完全相等");
+assert.equal(adv.casualties,adv.battleSession.losses,"累计伤亡同步");
+assert.ok(adv.battleSession.enemyLoss>0,"敌方也要掉人");
 assert.equal(adv.battleSession.log.length,1,"每段留一条战报");
 assert.equal(adv.battleSession.log[0].name,"开局");
+// 第1段不能鸣金：stageOptions 不提供该选项，因此必须被拒
+const stageOneStage=adv.battleSession.stage;
+assert.throws(()=>game.applyStageChoice(adv,"withdraw",()=>.5),/invalid option/,"第1段不得撤退");
+// 非法选项不得留下任何副作用
+const crewAfterThrow=adv.crew;
 assert.throws(()=>game.applyStageChoice(adv,"不存在的选项",()=>.5),/invalid option/);
+assert.equal(adv.crew,crewAfterThrow,"抛错不得扣人");
+assert.equal(adv.battleSession.stage,stageOneStage,"抛错不得推进段数");
+// rng=0 -> u=0.705，走劣势分支，覆盖 .25 档与"对面顶住了"文案
+const bad=game.createInitialState("沈劣势","yi","standard");
+bad.crew=300;
+game.startBattle(bad,{targetId:"south_dock",leaderIds:["player"],troops:200,tactic:"steady"});
+game.applyStageChoice(bad,"hold",()=>0);
+assert.ok(bad.battleSession.momentum<0,"u=0.705 应打出负势");
+assert.ok(bad.battleSession.log[0].text.includes("对面顶住了"),"劣势段要走另一套文案");
+// 会话结束后不得再推进
+const done=game.createInitialState("沈越界","yi","standard");
+done.crew=120;
+game.startBattle(done,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+done.battleSession.stage=4;
+assert.throws(()=>game.applyStageChoice(done,"hold",()=>.5),/battle already finished/,"越界段不得再打");
 const noFight=game.createInitialState("沈无战","yi","standard");
 assert.throws(()=>game.applyStageChoice(noFight,"hold",()=>.5),/no battle in progress/);
 

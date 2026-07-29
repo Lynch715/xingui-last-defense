@@ -234,23 +234,26 @@ function stageLoss(s,session,stageOk,casualtyMult,rng){
   return Math.max(1,Math.round(session.troops*rate*(.8+rng()*.45)/3));
 }
 function stageText(s,session,opt,stageOk,loss){
-  const place=TERRITORY_DEFS[session.targetId].name,who=opt.speaker||officer(s,session.leaderIds[0])?.name||s.name;
+  const place=TERRITORY_DEFS[session.targetId].name,who=opt.speaker||session.leaderIds.map(id=>lineupOfficer(s,session,id)).find(Boolean)?.name||s.name;
   const head=opt.id==="press"?`${who}让队伍整个压了上去。`:opt.id==="hold"?`队伍一段一段往前挪，没人脱队。`:`${who}的安排开始起作用。`;
   return`${head}${stageOk?`${place}的防线往后缩了一截。`:`对面顶住了，${place}门口反而更密。`}本段折损 ${loss} 人。`;
 }
 function applyStageChoice(s,optionId,rng=Math.random){
   const session=s.battleSession;if(!session)throw new Error("no battle in progress");
+  if(!(session.stage>=1&&session.stage<=3))throw new Error("battle already finished");
   const opt=stageOptions(s,session).find(o=>o.id===optionId);if(!opt)throw new Error("invalid option");
   if(opt.id==="withdraw"){session.outcome="retreat";return{ended:true,report:finishBattle(s,rng)}}
   const name=STAGE_NAMES[session.stage-1];let extra="";
   if(opt.id==="press")session.mods.pressed=true;
   const u=1-STAGE_SWING+rng()*STAGE_SWING*2;
-  const delta=(session.ratio*u*opt.mult*session.mods.multRest-1)*33.3;
+  const delta=(session.ratio*u*(opt.mult??1)*session.mods.multRest-1)*33.3;
   session.momentum=Math.round((session.momentum+delta)*10)/10;
-  const stageOk=delta>=0,loss=stageLoss(s,session,stageOk,opt.casualtyMult,rng);
+  const stageWon=delta>=0,ahead=session.momentum>=0;                       // stageWon=本段打赢没有；ahead=累计是否领先
+  const loss=stageLoss(s,session,ahead,(opt.casualtyMult??1),rng);         // 伤亡按累计局势定档，避免优势方被单段波动多收血
+  const told=session.stage===3?ahead:stageWon;                             // 决胜段的叙述必须与最终胜负一致
   session.losses+=loss;s.crew=Math.max(1,s.crew-loss);s.casualties+=loss;
-  session.enemyLoss+=Math.max(2,Math.round(s.territories[session.targetId].guard*(stageOk?.15:.06)*(.85+rng()*.35)));
-  session.log.push({name,text:stageText(s,session,opt,stageOk,loss)+(extra?" "+extra:"")});
+  session.enemyLoss+=Math.max(2,Math.round(s.territories[session.targetId].guard*(ahead?.15:.06)*(.85+rng()*.35)));
+  session.log.push({name,text:stageText(s,session,opt,told,loss)+(extra?" "+extra:"")});
   session.stage++;
   if(session.stage>3){session.outcome=session.momentum>=0?"win":"loss";return{ended:true,report:finishBattle(s,rng)}}
   saveGame();return{ended:false,session};
