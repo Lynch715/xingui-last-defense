@@ -201,7 +201,7 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   const ids=leaders.map(o=>o.id),est=estimateBattle(s,targetId,ids,troops,tactic);
   const mods={multRest:1,moraleFloor:0,convertRate:0,pressed:false,retreatShield:false};
   if(ids.includes("player"))mods.moraleFloor=45;                                  // 沈川「沈家之后」
-  if(ids.includes("yerong"))mods.retreatShield=true;                              // 叶蓉「货通雾港」
+  if(ids.includes("yerong"))mods.retreatShield=true;                              // 叶蓉在阵：撤退不掉士气（经营首次参战）
   if(ids.includes("xiejiu")&&(s.winStreak||0)>=2)mods.multRest*=1.05;             // 谢九「只服胜者」
   s.battleSession={targetId,leaderIds:ids,troops,tactic,stage:1,momentum:0,ratio:est.ratio,losses:0,enemyLoss:0,outcome:"",mods,log:[]};
   return s.battleSession;
