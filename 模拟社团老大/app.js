@@ -259,23 +259,53 @@ function applyStageChoice(s,optionId,rng=Math.random){
   saveGame();return{ended:false,session};
 }
 
-function resolveBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
-  if(!attackableTerritories(s).includes(targetId))throw new Error("target not attackable");
-  if(s.crew<10)throw new Error("not enough crew");
-  const leaders=leaderIds.map(id=>officer(s,id)).filter(o=>o&&o.side==="player"&&!o.injured).slice(0,3);if(!leaders.length)throw new Error("no leaders");troops=clamp(Math.round(troops),10,s.crew);const estimate=estimateBattle(s,targetId,leaders.map(o=>o.id),troops,tactic),meta=tacticMeta(tactic),roll=.84+rng()*.34,won=estimate.ratio*roll>=1;const t=s.territories[targetId],oldOwner=t.owner;
-  let lossRate=(won?.12:.25)*meta.casualty*(1+(50-s.morale)/150);if(owns(s,"shipyard"))lossRate*=.92;if(!won&&owns(s,"north_yard"))lossRate*=.88;const losses=Math.max(2,Math.min(troops-1,Math.round(troops*lossRate*(.8+rng()*.45))));const enemyLoss=Math.max(4,Math.round(t.guard*(won?.45:.18)*(.85+rng()*.35)));
-  s.crew=Math.max(1,s.crew-losses);s.casualties+=losses;s.battles++;s.lastBattleMonth=s.month;s.training=Math.max(0,(s.training||0)-8);change(s,"heat",won?8:5);leaders.forEach(o=>{o.battles++;o.merit+=won?5:2;o.exp+=won?3:1;o.loyalty=clamp(o.loyalty+(won?2:-2));if(o.id==="aqi"){const k=pick(["force","command","scheme","charm"],rng);o.stats[k]=clamp(o.stats[k]+rand(1,2,rng),1,99)}});
-  const injured=[];leaders.forEach(o=>{if(o.id!=="player"&&chance(won?.08:.18,rng)){o.injured=rand(1,3,rng);injured.push(o.name)}});
+function finishBattle(s,rng=Math.random){
+  const session=s.battleSession;if(!session)return null;
+  const {targetId,tactic,troops}=session,t=s.territories[targetId],oldOwner=t.owner;
+  const won=session.outcome==="win",retreated=session.outcome==="retreat";
+  const leaders=session.leaderIds.map(id=>officer(s,id)).filter(Boolean);
+  const meritMult=won&&session.leaderIds.includes("tangji")?1.5:1;                 // 唐霁「唯能者居」
+  s.battles++;s.lastBattleMonth=s.month;s.training=Math.max(0,(s.training||0)-8);
+  change(s,"heat",won?8:retreated?3:5);
+  leaders.forEach(o=>{o.battles++;o.merit+=Math.round((won?5:2)*meritMult);o.exp+=won?3:1;o.loyalty=clamp(o.loyalty+(won?2:-2));if(o.id==="aqi"){const k=pick(["force","command","scheme","charm"],rng);o.stats[k]=clamp(o.stats[k]+rand(1,2,rng),1,99)}});
+  const injured=[];leaders.forEach(o=>{if(o.id!=="player"&&!o.injured&&chance(won?.08:retreated?.05:.18,rng)){o.injured=rand(1,3,rng);injured.push(o.name)}});
   let captured=null;
-  if(won){s.wins++;change(s,"morale",9);change(s,"rep",7);change(s,"support",t.stability>=55?2:-2);const reward=Math.round(TERRITORY_DEFS[targetId].income*.8);addCash(s,reward);t.owner="player";t.guard=Math.max(16,Math.round((troops-losses)*.45));t.stability=s.creed==="yi"?62:s.creed==="wei"?42:52;s.intel[targetId]=true;const enemyLieutenants=factionLeaders(s,oldOwner).filter(o=>!["hewanshan","fangjingyao","guchangfeng"].includes(o.id));if(enemyLieutenants.length&&territoryCount(s,oldOwner)===0)captured=enemyLieutenants[0];log(s,"good",`和联胜拿下了${TERRITORY_DEFS[targetId].name}，伤${losses}人。`)}else{s.losses++;change(s,"morale",-10);change(s,"rep",-3);t.guard=Math.max(12,t.guard-enemyLoss);leaders.forEach(o=>o.resentment=clamp(o.resentment+2));log(s,"bad",`进攻${TERRITORY_DEFS[targetId].name}失利，折损${losses}人。`)}
-  const stages=buildBattleNarrative(s,targetId,leaders,troops,tactic,won,losses,estimate,rng);const report={targetId,targetName:TERRITORY_DEFS[targetId].name,oldOwner,leaders:leaders.map(o=>o.id),troops,tactic,won,losses,enemyLoss,injured,captured:captured?.id||null,ratio:estimate.ratio,stages};s.lastBattle=report;
-  if(won){markStyle(s,s.creed,1);checkFactionDefeat(s,oldOwner,captured);checkVictory(s)}return report;
+  if(won){
+    s.wins++;s.winStreak=(s.winStreak||0)+1;
+    change(s,"morale",9);change(s,"rep",7);change(s,"support",t.stability>=55?2:-2);
+    addCash(s,Math.round(TERRITORY_DEFS[targetId].income*.8));
+    t.owner="player";t.guard=Math.max(16,Math.round((troops-session.losses)*.45));
+    t.stability=s.creed==="yi"?62:s.creed==="wei"?42:52;s.intel[targetId]=true;
+    if(session.mods.convertRate>0){const gain=Math.round(session.enemyLoss*session.mods.convertRate);if(gain>0){s.crew+=gain;log(s,"good",`程野把 ${gain} 名对方的人带回了老街。`)}}
+    const lts=factionLeaders(s,oldOwner).filter(o=>!["hewanshan","fangjingyao","guchangfeng"].includes(o.id));
+    if(lts.length&&territoryCount(s,oldOwner)===0)captured=lts[0];
+    log(s,"good",`和联胜拿下了${TERRITORY_DEFS[targetId].name}，伤${session.losses}人。`);
+  }else{
+    s.winStreak=0;
+    if(retreated){
+      if(!session.mods.retreatShield)change(s,"morale",-6);                        // 叶蓉在阵则不掉士气
+      change(s,"rep",-2);
+      if(session.mods.pressed)resent(s,"zhaokui",8);                               // 听了赵魁又收手
+      log(s,"warn",`队伍从${TERRITORY_DEFS[targetId].name}撤了回来，折损${session.losses}人。`);
+    }else{
+      s.losses++;change(s,"morale",-10);change(s,"rep",-3);
+      t.guard=Math.max(12,t.guard-session.enemyLoss);
+      leaders.forEach(o=>o.resentment=clamp(o.resentment+2));
+      log(s,"bad",`进攻${TERRITORY_DEFS[targetId].name}失利，折损${session.losses}人。`);
+    }
+    if(session.leaderIds.includes("xiejiu"))loyalty(s,"xiejiu",-6);                // 谢九败北忠诚共 -8
+  }
+  const report={targetId,targetName:TERRITORY_DEFS[targetId].name,oldOwner,leaders:session.leaderIds.slice(),troops,tactic,won,outcome:session.outcome,losses:session.losses,enemyLoss:session.enemyLoss,injured,captured:captured?.id||null,ratio:session.ratio,momentum:session.momentum,stages:session.log.slice()};
+  s.lastBattle=report;s.battleSession=null;
+  if(won){markStyle(s,s.creed,1);checkFactionDefeat(s,oldOwner,captured);checkVictory(s)}
+  saveGame();return report;
 }
 
-function buildBattleNarrative(s,targetId,leaders,troops,tactic,won,losses,estimate,rng){const place=TERRITORY_DEFS[targetId].name,lead=leaders[0]?.name||s.name,meta=tacticMeta(tactic),known=s.intel[targetId];const open=tactic==="assault"?`${lead}带人从正面压上，第一轮就把所有人都拖进了雨里。`:tactic==="ambush"?`${lead}绕开主路，但${known?"提前拿到的路线图没出错":"没人能确定那条路有没有人等着"}。`:tactic==="persuade"?`程野把话送进${place}：现在放下手，和联胜还留位置。`:`${lead}让队伍一段一段往前压，没人可以自己脱离队伍。`;
-  const middle=estimate.ratio>=1?`僵持过半，${place}的防线开始往后缩。你看得出来，对面的人已经在找退路。`:`僵持过半，对方仍死死守着入口。${leaders[1]?.name||lead}的人被迫停了一次，又重新压上去。`;
-  const end=won?`最后一道门开了。${place}的招牌被放到地上，和联胜的人没有马上欢呼，他们先回头数了一遍谁没跟上来。`:`雨里的队伍开始往后撤。${lead}留在最后一段路口，直到最后一个人离开才转身。`;
-  return[{name:"开局",text:open},{name:"僵持",text:middle},{name:won?"夺地":"撤退",text:end+`本场投入${troops}人，折损${losses}人，采用“${meta.name}”。`}]
+// 无头/自动战斗：三段全选 hold。既有测试沿用它，也是平衡回归夹具。
+function resolveBattle(s,plan,rng=Math.random){
+  startBattle(s,plan,rng);
+  while(s.battleSession)applyStageChoice(s,"hold",rng);
+  return s.lastBattle;
 }
 
 function checkFactionDefeat(s,owner,captured){if(!["east","wan","long"].includes(owner)||territoryCount(s,owner)>0||s.factions[owner].defeated)return;s.factions[owner].defeated=true;const boss={east:"hewanshan",wan:"fangjingyao",long:"guchangfeng"}[owner],bossObj=officer(s,boss);if(bossObj)bossObj.side="defeated";addCash(s,20);s.crew+=12;change(s,"rep",12);log(s,"good",`${FACTIONS[owner].name}失去所有地盘，人马开始归附。`);if(captured)queueCaptiveDecision(s,captured,owner);enqueue({title:`${FACTIONS[owner].name}的招牌被摘下`,portrait:bossObj?.portrait,body:`<p>${bossObj?.name||"对方老大"}坐在空掉的堂口里，桌上没有茶。<span class='dialogue'>“地没了，人心也散了。你爸那时候，没有你这么快。”</span></p><p>从今天起，${FACTIONS[owner].name}不再是雾港地图上的一种颜色。</p>`,options:[option("收下他们的人","人手+12；声望+12",()=>{})]},"社团吞并")}
@@ -383,4 +413,4 @@ function lockZoom(){["gesturestart","gesturechange","gestureend"].forEach(t=>doc
 function boot(){lockZoom();const saved=loadGame();$("newGameBtn")?.addEventListener("click",showCreator);$("continueBtn")?.addEventListener("click",()=>{S=loadGame();showGame()});$("creedPicker")?.querySelectorAll("[data-creed]").forEach(b=>b.addEventListener("click",()=>{creatorCreed=b.dataset.creed;$("creedPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("difficultyPicker")?.querySelectorAll("[data-difficulty]").forEach(b=>b.addEventListener("click",()=>{creatorDifficulty=b.dataset.difficulty;$("difficultyPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("startGameBtn")?.addEventListener("click",()=>{S=createInitialState($("playerName").value,creatorCreed,creatorDifficulty);prologueIndex=0;$("creator").classList.add("hidden");$("prologue").classList.remove("hidden");renderPrologue()});$("nextPrologueBtn")?.addEventListener("click",()=>{if(prologueIndex<PROLOGUE.length-1){prologueIndex++;renderPrologue()}else showGame()});$("gameNav")?.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{if(!S){showMenu();return}S.tab=b.dataset.tab;saveGame();renderAll()}));$("endMonthBtn")?.addEventListener("click",()=>S&&advanceMonth(S));$("saveBtn")?.addEventListener("click",()=>{if(saveGame())toast("进度已保存在本机")});$("restartBtn")?.addEventListener("click",()=>{if(confirm("删除当前存档并重新开始？")){deleteSave();S=null;showMenu()}});showMenu();if(saved&&saved.ended){S=saved}}
 
 if(typeof document!=="undefined")document.addEventListener("DOMContentLoaded",boot);
-if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,applyStageChoice,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
+if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,applyStageChoice,finishBattle,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};

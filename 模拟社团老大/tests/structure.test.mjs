@@ -176,6 +176,35 @@ assert.throws(()=>game.applyStageChoice(done,"hold",()=>.5),/battle already fini
 const noFight=game.createInitialState("沈无战","yi","standard");
 assert.throws(()=>game.applyStageChoice(noFight,"hold",()=>.5),/no battle in progress/);
 
+const fin=game.createInitialState("沈结算","yi","standard");
+fin.crew=200;fin.morale=95;fin.territories.south_dock.guard=8;
+const fr=game.resolveBattle(fin,{targetId:"south_dock",leaderIds:["player","zhaokui","chengye"],troops:150,tactic:"assault"},()=>.99);
+assert.equal(fr.won,true);
+assert.equal(fr.outcome,"win");
+assert.equal(fin.territories.south_dock.owner,"player");
+assert.equal(fin.battleSession,null,"结算后必须清空会话");
+assert.equal(fin.winStreak,1,"胜场连胜计数");
+assert.equal(fr.stages.length,3,"三段战报来自真实判定");
+assert.equal(fin.lastBattle,fr);
+
+// 平衡回归：势必须真的响应兵力差。用测试文件里已有的 seeded LCG 跑蒙特卡洛。
+function winRate(troops,seed,n){
+  let w=0;
+  for(let k=0;k<n;k++){
+    const t=game.createInitialState("沈平衡","yi","standard");
+    t.crew=400;t.morale=62;t.territories.south_dock.guard=46;
+    if(game.resolveBattle(t,{targetId:"south_dock",leaderIds:["player","zhaokui","chengye"],troops,tactic:"steady"},seeded(seed+k)).won)w++;
+  }
+  return w/n;
+}
+// 兵力只能在 ratio∈(0.772,1.418) 这段窗口里取样：战力对兵力是仿射的（头目那份常数很大），
+// 34人→ratio≈0.89，56人→ratio≈1.13，倍差 1.29 才塞得进窗口。取 45/160 会直接冲出窗口两端变成必胜必败。
+const WEAK_TROOPS=34,STRONG_TROOPS=56;
+const weakRate=winRate(WEAK_TROOPS,11000,150),strongRate=winRate(STRONG_TROOPS,11000,150);
+assert.ok(strongRate>weakRate+.3,`兵力差必须显著改变胜率：${WEAK_TROOPS}人 ${weakRate} vs ${STRONG_TROOPS}人 ${strongRate}`);
+assert.ok(weakRate>0,"弱势方不应是必败死区（旧版 ratio<0.848 必败）");
+assert.ok(strongRate<1,"优势方不应是必胜死区（旧版 ratio>1.191 必胜）");
+
 s.cash=200;
 const candidate=s.recruitMarket[0];
 assert.ok(candidate);
