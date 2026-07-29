@@ -144,20 +144,28 @@ assert.equal(adv.casualties,adv.battleSession.losses,"累计伤亡同步");
 assert.ok(adv.battleSession.enemyLoss>0,"敌方也要掉人");
 assert.equal(adv.battleSession.log.length,1,"每段留一条战报");
 assert.equal(adv.battleSession.log[0].name,"开局");
-// 第1段不能鸣金：stageOptions 不提供该选项，因此必须被拒
-const stageOneStage=adv.battleSession.stage;
-assert.throws(()=>game.applyStageChoice(adv,"withdraw",()=>.5),/invalid option/,"第1段不得撤退");
+// 第1段不能鸣金：stageOptions 不提供该选项，因此必须被拒。
+// 必须另起一场没打过的战斗来验——adv 此刻已经被上面那次 hold 推进到第2段了。
+const fresh=game.createInitialState("沈开局撤","yi","standard");
+fresh.crew=120;
+game.startBattle(fresh,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+assert.equal(fresh.battleSession.stage,1);
+assert.throws(()=>game.applyStageChoice(fresh,"withdraw",()=>.5),/invalid option/,"第1段不得撤退");
+assert.equal(fresh.crew,120,"被拒的撤退不得扣人");
 // 非法选项不得留下任何副作用
+const stageOneStage=adv.battleSession.stage;
 const crewAfterThrow=adv.crew;
 assert.throws(()=>game.applyStageChoice(adv,"不存在的选项",()=>.5),/invalid option/);
 assert.equal(adv.crew,crewAfterThrow,"抛错不得扣人");
 assert.equal(adv.battleSession.stage,stageOneStage,"抛错不得推进段数");
-// rng=0 -> u=0.705，走劣势分支，覆盖 .25 档与"对面顶住了"文案
+// rng=0 -> u=0.705，走劣势分支，覆盖 .25 档与"对面顶住了"文案。
+// 兵力必须真的处于劣势：200人打驻防46是碾压，ratio≈2.5，再差的骰子也翻不出负势。
 const bad=game.createInitialState("沈劣势","yi","standard");
 bad.crew=300;
-game.startBattle(bad,{targetId:"south_dock",leaderIds:["player"],troops:200,tactic:"steady"});
+const badSess=game.startBattle(bad,{targetId:"south_dock",leaderIds:["player"],troops:30,tactic:"steady"});
+assert.ok(badSess.ratio<1,"这一局必须真的是劣势，否则下面的断言没有意义");
 game.applyStageChoice(bad,"hold",()=>0);
-assert.ok(bad.battleSession.momentum<0,"u=0.705 应打出负势");
+assert.ok(bad.battleSession.momentum<0,"u=0.705 且 ratio<1 应打出负势");
 assert.ok(bad.battleSession.log[0].text.includes("对面顶住了"),"劣势段要走另一套文案");
 // 会话结束后不得再推进
 const done=game.createInitialState("沈越界","yi","standard");
