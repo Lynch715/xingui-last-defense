@@ -67,6 +67,17 @@ assert.throws(()=>game.resolveBattle(shortCrew,{
   tactic:"steady"
 },()=>.5),/not enough crew/);
 
+const bs=game.createInitialState("沈开战","yi","standard");
+bs.crew=120;
+const sess=game.startBattle(bs,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:60,tactic:"steady"});
+assert.equal(sess.stage,1,"开战后停在第1段");
+assert.equal(sess.momentum,0);
+assert.equal(sess.losses,0);
+assert.ok(sess.ratio>0,"ratio 必须在开战时冻结");
+assert.equal(bs.crew,120,"startBattle 本身不扣人");
+assert.equal(sess.mods.moraleFloor,45,"沈川在阵→士气下限45");
+assert.equal(bs.battleSession,sess);
+
 s.cash=200;
 const candidate=s.recruitMarket[0];
 assert.ok(candidate);
