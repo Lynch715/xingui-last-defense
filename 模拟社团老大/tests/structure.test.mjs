@@ -257,6 +257,7 @@ assert.equal(advancing.recruitMarket.length,3);
 // 把一名命名头目以我方身份塞进队伍（后续任务复用）
 function joinNamed(state,id){
   const d=game.CHARACTER_DEFS[id];
+  state.officers=state.officers.filter(o=>o.id!==id);
   state.officers.push({id,name:d.name,side:"player",role:d.role,type:d.type,portrait:d.portrait,
     stats:{...d.stats},trait:d.trait,traitText:d.traitText,loyalty:70,resentment:0,merit:0,
     injured:0,exp:0,battles:0,wins:0,named:true});
@@ -309,5 +310,53 @@ game.applyStageChoice(calmQuit,"hold",cq);
 const calmBefore=calmQuit.officers.find(o=>o.id==="zhaokui").resentment;
 game.applyStageChoice(calmQuit,"withdraw",cq);
 assert.equal(calmQuit.officers.find(o=>o.id==="zhaokui").resentment,calmBefore,"没喊过压上就不该记仇");
+
+const prop=game.createInitialState("沈提议","yi","standard");
+prop.crew=200;
+game.startBattle(prop,{targetId:"south_dock",leaderIds:["player","sumanqing","chengye"],troops:100,tactic:"steady"});
+const ps=prop.battleSession;
+assert.ok(game.stageOptions(prop,ps).some(o=>o.id==="flank"),"苏曼青谋略88应给出侧翼提议");
+assert.ok(!game.stageOptions(prop,ps).some(o=>o.id==="parley"),"势≤20 时不给劝降");
+ps.momentum=25;
+assert.ok(game.stageOptions(prop,ps).some(o=>o.id==="parley"),"势>20 才解锁劝降");
+assert.ok(game.stageOptions(prop,ps).length<=5,"选项上限5");
+assert.ok(game.stageOptions(prop,ps).some(o=>o.id==="hold"),"稳住必须恒在");
+// 提议效果必须按属性缩放，不是固定值
+const flank=game.stageOptions(prop,ps).find(o=>o.id==="flank");
+assert.equal(flank.mult,1+prop.officers.find(o=>o.id==="sumanqing").stats.scheme/900,"侧翼威力按谋略缩放");
+const parley=game.stageOptions(prop,ps).find(o=>o.id==="parley");
+assert.equal(parley.convert,prop.officers.find(o=>o.id==="chengye").stats.charm/200,"劝降转化率按魅力缩放");
+// 魏小楼：情报未查明时提议后门，并当场写入 intel
+const spy=joinNamed(game.createInitialState("沈探路","yi","standard"),"weixiaolou");
+spy.crew=200;
+game.startBattle(spy,{targetId:"south_dock",leaderIds:["player","weixiaolou"],troops:100,tactic:"steady"});
+assert.ok(!spy.intel.south_dock,"开打前该地情报未知");
+assert.ok(game.stageOptions(spy,spy.battleSession).some(o=>o.id==="backdoor"));
+game.applyStageChoice(spy,"backdoor",()=>.5);
+assert.equal(spy.intel.south_dock,true,"后门提议必须当场揭穿驻防");
+assert.ok(spy.battleSession.log[0].text.includes("魏小楼"),"揭穿要写进战报");
+assert.ok(!game.stageOptions(spy,spy.battleSession).some(o=>o.id==="backdoor"),"情报已知后不再重复提议");
+// 劝降真的会把敌兵变成自己人
+const talk=game.createInitialState("沈劝降","yi","standard");
+talk.crew=300;talk.morale=95;talk.territories.south_dock.guard=8;
+const tr=()=>.99;
+game.startBattle(talk,{targetId:"south_dock",leaderIds:["player","chengye"],troops:200,tactic:"steady"},tr);
+game.applyStageChoice(talk,"hold",tr);
+game.applyStageChoice(talk,"hold",tr);
+assert.ok(talk.battleSession.momentum>20,"这局必须打出优势，否则劝降不会出现");
+assert.ok(game.stageOptions(talk,talk.battleSession).some(o=>o.id==="parley"));
+const crewBeforeParley=talk.crew;
+game.applyStageChoice(talk,"parley",tr);
+assert.equal(talk.lastBattle.outcome,"win");
+assert.ok(talk.crew>crewBeforeParley-talk.lastBattle.losses,"劝降胜利后应有敌兵加入，抵消部分伤亡");
+// 阿七断后：成长更快
+const rear=joinNamed(game.createInitialState("沈断后","yi","standard"),"aqi");
+rear.crew=200;
+game.startBattle(rear,{targetId:"south_dock",leaderIds:["player","aqi"],troops:100,tactic:"steady"});
+game.applyStageChoice(rear,"hold",()=>.5);
+const aqiExpBefore=rear.officers.find(o=>o.id==="aqi").exp;
+assert.ok(game.stageOptions(rear,rear.battleSession).some(o=>o.id==="rearguard"),"第2段起阿七可断后");
+game.applyStageChoice(rear,"rearguard",()=>.5);
+assert.equal(rear.officers.find(o=>o.id==="aqi").exp,aqiExpBefore+3,"断后让阿七多长3点经验");
 
 console.log("structure and core-loop tests passed");

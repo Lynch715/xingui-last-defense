@@ -225,7 +225,28 @@ function stageOptions(s,session){
   if(session.stage>=2)out.push({id:"withdraw",speaker:lineupOfficer(s,session,"sumanqing")?"苏曼青":"",text:"鸣金收兵",effect:"保住剩下的人，此战作罢",mult:1,casualtyMult:0});
   return out;
 }
-function officerProposals(s,session){return[]}
+// 效果按属性缩放，不是固定值——否则杂鱼说客和程野没区别。
+// priority 决定被 stageOptions 截断时谁先留下：稀有/一次性的提议排前面。
+function officerProposals(s,session){
+  const out=[],sm=lineupOfficer(s,session,"sumanqing"),cy=lineupOfficer(s,session,"chengye");
+  if(sm&&session.stage<=2&&sm.stats.scheme>=70)
+    out.push({id:"flank",speaker:"苏曼青",text:"「他们左翼是空的」",effect:"势↑ 伤亡↓",mult:1+sm.stats.scheme/900,casualtyMult:.9,priority:2});
+  if(lineupOfficer(s,session,"weixiaolou")&&!s.intel[session.targetId])
+    out.push({id:"backdoor",speaker:"魏小楼",text:"「后门我一直留着」",effect:"势↑ 当场揭穿驻防",mult:1.12,casualtyMult:1,priority:3});
+  if(cy&&session.momentum>20)
+    out.push({id:"parley",speaker:"程野",text:"「让我去喊一嗓子」",effect:"胜则收编对方的人",mult:.95,casualtyMult:1,convert:cy.stats.charm/200,priority:4});
+  if(lineupOfficer(s,session,"yerong")&&session.stage<=2)
+    out.push({id:"supply",speaker:"叶蓉",text:"「退路和粮草我安排好了」",effect:"伤亡↓↓",mult:1,casualtyMult:.75,priority:2});
+  const dc=duelChallenger(s,session);
+  if(dc&&duelTarget(s,session))
+    out.push({id:"duel",speaker:dc.name,text:"「那个人交给我」",effect:"单挑：胜则压制，败则受伤",mult:1,casualtyMult:1,priority:4});
+  if(lineupOfficer(s,session,"aqi")&&session.stage>=2)
+    out.push({id:"rearguard",speaker:"阿七",text:"「我来断后」",effect:"伤亡↓ 阿七成长更快",mult:1,casualtyMult:.85,priority:1});
+  return out;
+}
+// 对手取敌方未受伤头目里武力最高者，并要求 force>=60——否则全局只有韩彪算猛将，单挑几乎不会出现。
+function duelTarget(s,session){return factionLeaders(s,s.territories[session.targetId].owner).filter(o=>o.stats.force>=60).sort((a,b)=>b.stats.force-a.stats.force)[0]||null}
+function duelChallenger(s,session){return["hanbiao","zhaokui","xiejiu"].map(id=>lineupOfficer(s,session,id)).filter(Boolean).sort((a,b)=>b.stats.force-a.stats.force)[0]||null}
 function stageLoss(s,session,stageOk,casualtyMult,rng){
   const meta=tacticMeta(session.tactic),morale=Math.max(s.morale,session.mods.moraleFloor);
   let rate=(stageOk?.12:.25)*meta.casualty*(1+(50-morale)/150)*casualtyMult;
@@ -245,6 +266,9 @@ function applyStageChoice(s,optionId,rng=Math.random){
   if(opt.id==="withdraw"){session.outcome="retreat";return{ended:true,report:finishBattle(s,rng)}}
   const name=STAGE_NAMES[session.stage-1];let extra="";
   if(opt.id==="press")session.mods.pressed=true;
+  if(opt.id==="backdoor"){s.intel[session.targetId]=true;extra=`魏小楼把${TERRITORY_DEFS[session.targetId].name}的真实驻防摊在了你面前。`}
+  if(opt.id==="parley")session.mods.convertRate=opt.convert;
+  if(opt.id==="rearguard"){const a=officer(s,"aqi");if(a)a.exp+=3}
   const u=1-STAGE_SWING+rng()*STAGE_SWING*2;
   const delta=(session.ratio*u*(opt.mult??1)*session.mods.multRest-1)*33.3;
   session.momentum=Math.round((session.momentum+delta)*10)/10;
