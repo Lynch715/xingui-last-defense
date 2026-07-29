@@ -131,6 +131,22 @@ game.startBattle(midFight,{targetId:"south_dock",leaderIds:["player"],troops:60,
 assert.equal(game.advanceMonth(midFight,true),false,"血拼进行中不得推进月份");
 assert.equal(midFight.month,0);
 
+const adv=game.createInitialState("沈推进","yi","standard");
+adv.crew=120;
+game.startBattle(adv,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:60,tactic:"steady"});
+const crewBefore=adv.crew;
+const r1=game.applyStageChoice(adv,"hold",()=>.5);
+assert.equal(r1.ended,false);
+assert.equal(adv.battleSession.stage,2,"打完一段进入第2段");
+assert.notEqual(adv.battleSession.momentum,0,"势必须发生变化");
+assert.ok(adv.crew<crewBefore,"伤亡必须逐段扣，存档任何时刻都自洽");
+assert.ok(adv.battleSession.losses>0);
+assert.equal(adv.battleSession.log.length,1,"每段留一条战报");
+assert.equal(adv.battleSession.log[0].name,"开局");
+assert.throws(()=>game.applyStageChoice(adv,"不存在的选项",()=>.5),/invalid option/);
+const noFight=game.createInitialState("沈无战","yi","standard");
+assert.throws(()=>game.applyStageChoice(noFight,"hold",()=>.5),/no battle in progress/);
+
 s.cash=200;
 const candidate=s.recruitMarket[0];
 assert.ok(candidate);
