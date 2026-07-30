@@ -451,4 +451,70 @@ game.applyStageChoice(rep,"hold",()=>.5);
 game.applyStageChoice(rep,"hold",()=>.5);
 assert.deepEqual(rep.lastBattle.injured,["韩彪"],"单挑负伤的头目要进战报，且只出现一次");
 
+// 沈川「沈家之后」：士气下限45，低士气时伤亡不再随士气恶化。
+// 用同一套阵容与同一 rng，只切 mods.moraleFloor，才能把变量隔离干净。
+function floorLoss(floorOn){
+  const a=game.createInitialState("沈低迷","yi","standard");
+  a.crew=900;a.morale=10;
+  game.startBattle(a,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:800,tactic:"steady"});
+  if(!floorOn)a.battleSession.mods.moraleFloor=0;
+  game.applyStageChoice(a,"hold",()=>.5);
+  return a.battleSession.losses;
+}
+assert.equal(floorLoss(true),24,"士气10但有沈川：按士气45计伤亡");
+assert.equal(floorLoss(false),29,"同局无下限：按士气10计伤亡，明显更惨");
+// 士气高于下限时该被动不应有任何影响
+function floorAt(morale){
+  const a=game.createInitialState("沈高昂","yi","standard");
+  a.crew=900;a.morale=morale;
+  game.startBattle(a,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:800,tactic:"steady"});
+  const withFloor=a.battleSession.mods.moraleFloor;
+  a.battleSession.mods.moraleFloor=0;
+  game.applyStageChoice(a,"hold",()=>.5);
+  const off=a.battleSession.losses;
+  const b=game.createInitialState("沈高昂2","yi","standard");
+  b.crew=900;b.morale=morale;
+  game.startBattle(b,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:800,tactic:"steady"});
+  game.applyStageChoice(b,"hold",()=>.5);
+  return[b.battleSession.losses,off,withFloor];
+}
+const[onHi,offHi]=floorAt(62);
+assert.equal(onHi,offHi,"士气62高于下限45，沈川被动不该改变任何结果");
+
+// 唐霁「唯能者居」：胜利时全员功劳 ×1.5
+const merit=joinNamed(game.createInitialState("沈唯能","yi","standard"),"tangji");
+merit.crew=250;merit.morale=95;merit.territories.south_dock.guard=6;
+game.resolveBattle(merit,{targetId:"south_dock",leaderIds:["player","tangji"],troops:200,tactic:"assault"},()=>.99);
+assert.equal(merit.lastBattle.won,true);
+assert.equal(merit.officers.find(o=>o.id==="player").merit,8,"唐霁在阵：胜利功劳 round(5×1.5)=8");
+// 对照组：没有唐霁则是基础 5
+const noMerit=game.createInitialState("沈无唐","yi","standard");
+noMerit.crew=250;noMerit.morale=95;noMerit.territories.south_dock.guard=6;
+game.resolveBattle(noMerit,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:200,tactic:"assault"},()=>.99);
+assert.equal(noMerit.lastBattle.won,true);
+assert.equal(noMerit.officers.find(o=>o.id==="player").merit,5,"没有唐霁就是基础功劳5");
+
+// 谢九「只服胜者」：败北忠诚共 -8（通用 -2 再叠 -6）
+const xie=joinNamed(game.createInitialState("沈只服","yi","standard"),"xiejiu");
+xie.crew=60;xie.morale=20;xie.territories.south_dock.guard=78;
+game.resolveBattle(xie,{targetId:"south_dock",leaderIds:["xiejiu"],troops:20,tactic:"steady"},()=>.01);
+assert.equal(xie.lastBattle.won,false,"这局必须打输，否则断言没有意义");
+assert.equal(xie.officers.find(o=>o.id==="xiejiu").loyalty,62,"70 -2(通用) -6(谢九) = 62");
+assert.equal(xie.winStreak,0);
+// 对照组：赵魁同样打输只掉 2
+const zk=game.createInitialState("沈赵败","yi","standard");
+zk.crew=60;zk.morale=20;zk.territories.south_dock.guard=78;
+const zkBefore=zk.officers.find(o=>o.id==="zhaokui").loyalty;
+game.resolveBattle(zk,{targetId:"south_dock",leaderIds:["zhaokui"],troops:20,tactic:"steady"},()=>.01);
+assert.equal(zk.lastBattle.won,false);
+assert.equal(zk.officers.find(o=>o.id==="zhaokui").loyalty,zkBefore-2,"普通头目败北只掉2");
+// 谢九连胜加成：winStreak>=2 时 multRest 起步就是 1.05
+const streak=joinNamed(game.createInitialState("沈连胜","yi","standard"),"xiejiu");
+streak.crew=200;streak.winStreak=2;
+const streakSess=game.startBattle(streak,{targetId:"south_dock",leaderIds:["player","xiejiu"],troops:100,tactic:"steady"});
+assert.equal(streakSess.mods.multRest,1.05,"连胜2场后谢九给全程 ×1.05");
+const noStreak=joinNamed(game.createInitialState("沈无连胜","yi","standard"),"xiejiu");
+noStreak.crew=200;noStreak.winStreak=1;
+assert.equal(game.startBattle(noStreak,{targetId:"south_dock",leaderIds:["player","xiejiu"],troops:100,tactic:"steady"}).mods.multRest,1,"连胜不足2场则无加成");
+
 console.log("structure and core-loop tests passed");
