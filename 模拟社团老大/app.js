@@ -234,7 +234,7 @@ function officerProposals(s,session){
   if(lineupOfficer(s,session,"weixiaolou")&&!s.intel[session.targetId])
     out.push({id:"backdoor",speaker:"魏小楼",text:"「后门我一直留着」",effect:"势↑ 当场揭穿驻防",mult:1.12,casualtyMult:1,priority:5});
   if(cy&&session.momentum>20)
-    out.push({id:"parley",speaker:"程野",text:"「让我去喊一嗓子」",effect:"胜则收编对方的人",mult:.95,casualtyMult:1,convert:cy.stats.charm/200,priority:3});
+    out.push({id:"parley",speaker:"程野",text:"「让我去喊一嗓子」",effect:"胜则收编对方的人，但这块地不服你",mult:.88,casualtyMult:1,convert:cy.stats.charm/260,priority:3});
   if(lineupOfficer(s,session,"yerong")&&session.stage<=2)
     out.push({id:"supply",speaker:"叶蓉",text:"「退路和粮草我安排好了」",effect:"伤亡↓↓",mult:1,casualtyMult:.75,priority:2});
   const dc=session.mods.dueled?null:duelChallenger(s,session);
@@ -245,7 +245,13 @@ function officerProposals(s,session){
   return out;
 }
 // 对手取敌方未受伤头目里武力最高者，并要求 force>=60——否则全局只有韩彪算猛将，单挑几乎不会出现。
-function duelTarget(s,session){return factionLeaders(s,s.territories[session.targetId].owner).filter(o=>o.stats.force>=60).sort((a,b)=>b.stats.force-a.stats.force)[0]||null}
+// 中央港区挂在「港城同盟」名下，而同盟本身没有任何头目，终局之战因此永远碰不到单挑——
+// 最该有单挑的一战反而没有。这里让已被打散的三家龙头到同盟的地界上压最后一阵。
+function duelTarget(s,session){
+  const owner=s.territories[session.targetId].owner,live=factionLeaders(s,owner).filter(o=>o.stats.force>=60);
+  const pool=live.length?live:owner==="coalition"?s.officers.filter(o=>o.side==="defeated"&&o.injured<=0&&o.stats.force>=60):[];
+  return pool.slice().sort((a,b)=>b.stats.force-a.stats.force)[0]||null;
+}
 function duelChallenger(s,session){return["hanbiao","zhaokui","xiejiu"].map(id=>lineupOfficer(s,session,id)).filter(Boolean).sort((a,b)=>b.stats.force-a.stats.force)[0]||null}
 function resolveDuel(s,session,rng){
   const me=duelChallenger(s,session),foe=duelTarget(s,session);
@@ -317,7 +323,8 @@ function finishBattle(s,rng=Math.random){
     addCash(s,Math.round(TERRITORY_DEFS[targetId].income*.8));
     t.owner="player";t.guard=Math.max(16,Math.round((troops-session.losses)*.45));
     t.stability=s.creed==="yi"?62:s.creed==="wei"?42:52;s.intel[targetId]=true;
-    if(session.mods.convertRate>0){const gain=Math.round(session.enemyLoss*session.mods.convertRate);if(gain>0){s.crew+=gain;log(s,"good",`程野把 ${gain} 名对方的人带回了老街。`)}}
+    // 劝降来的人终究是对家的旧部：地盘落到手里，街面上却不服你。
+    if(session.mods.convertRate>0){t.stability=clamp(t.stability-10);const gain=Math.round(session.enemyLoss*session.mods.convertRate);if(gain>0){s.crew+=gain;log(s,"good",`程野把 ${gain} 名对方的人带回了老街，${TERRITORY_DEFS[targetId].name}一时还压不住。`)}}
     const lts=factionLeaders(s,oldOwner).filter(o=>!["hewanshan","fangjingyao","guchangfeng"].includes(o.id));
     if(lts.length&&territoryCount(s,oldOwner)===0)captured=lts[0];
     log(s,"good",`和联胜拿下了${TERRITORY_DEFS[targetId].name}，伤${session.losses}人。`);

@@ -325,7 +325,8 @@ assert.ok(game.stageOptions(prop,ps).some(o=>o.id==="hold"),"稳住必须恒在"
 const flank=game.stageOptions(prop,ps).find(o=>o.id==="flank");
 assert.equal(flank.mult,1+prop.officers.find(o=>o.id==="sumanqing").stats.scheme/900,"侧翼威力按谋略缩放");
 const parley=game.stageOptions(prop,ps).find(o=>o.id==="parley");
-assert.equal(parley.convert,prop.officers.find(o=>o.id==="chengye").stats.charm/200,"劝降转化率按魅力缩放");
+assert.equal(parley.convert,prop.officers.find(o=>o.id==="chengye").stats.charm/260,"劝降转化率按魅力缩放");
+assert.equal(parley.mult,.88,"劝降要付出实打实的势，否则解锁后就是必选项");
 // 魏小楼：情报未查明时提议后门，并当场写入 intel
 const spy=joinNamed(game.createInitialState("沈探路","yi","standard"),"weixiaolou");
 spy.crew=200;
@@ -551,5 +552,39 @@ assert.ok(roundTrip.battleSession,"完好会话必须保留");
 assert.equal(roundTrip.battleSession.stage,1);
 assert.deepEqual(game.stageOptions(roundTrip,roundTrip.battleSession),game.stageOptions(ok,ok.battleSession),"往返后重建的选项必须一致");
 assert.equal(game.applyStageChoice(roundTrip,"hold",()=>.5).ended,false,"往返后必须能继续推进");
+
+// 终局之战也要有单挑：中央港区挂在港城同盟名下而同盟没有头目，
+// 需由已被打散的三家龙头压最后一阵，否则最该有单挑的一战反而没有。
+const lastStand=game.createInitialState("沈终战","wei","standard");
+for(const id of Object.keys(lastStand.territories))if(id!=="central_harbor")lastStand.territories[id].owner="player";
+lastStand.crew=500;
+["hewanshan","fangjingyao","guchangfeng"].forEach(id=>{lastStand.officers.find(o=>o.id===id).side="defeated"});
+assert.equal(lastStand.territories.central_harbor.owner,"coalition");
+assert.equal(lastStand.officers.filter(o=>o.side==="coalition").length,0,"同盟名下确实没有头目");
+game.startBattle(lastStand,{targetId:"central_harbor",leaderIds:["player","zhaokui"],troops:300,tactic:"assault"});
+assert.ok(game.stageOptions(lastStand,lastStand.battleSession).some(o=>o.id==="duel"),"终局之战必须能单挑");
+game.applyStageChoice(lastStand,"duel",()=>.01);
+assert.ok(lastStand.officers.some(o=>o.side==="defeated"&&o.injured>0),"被打散的龙头出来压阵并被打伤");
+// 普通地盘不该借用已被打散的龙头当守将
+const normal=game.createInitialState("沈常规","wei","standard");
+normal.crew=300;
+normal.officers.filter(o=>o.side==="east").forEach(o=>{o.injured=2});
+["hewanshan","fangjingyao","guchangfeng"].forEach(id=>{const o=normal.officers.find(x=>x.id===id);if(o&&o.side!=="east")o.side="defeated"});
+game.startBattle(normal,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:200,tactic:"assault"});
+assert.ok(!game.stageOptions(normal,normal.battleSession).some(o=>o.id==="duel"),"非同盟地盘守将全伤时不得借调他人");
+
+// 劝降拿下的地盘不服管：稳定度比强攻拿下低 10
+function parleyStability(useParley){
+  const s=game.createInitialState("沈收编","yi","standard");
+  s.crew=400;s.morale=95;s.territories.south_dock.guard=70;
+  const rng=()=>.99;
+  game.startBattle(s,{targetId:"south_dock",leaderIds:["player","chengye"],troops:200,tactic:"steady"},rng);
+  game.applyStageChoice(s,"hold",rng);game.applyStageChoice(s,"hold",rng);
+  game.applyStageChoice(s,useParley?"parley":"hold",rng);
+  assert.equal(s.lastBattle.won,true);
+  return s.territories.south_dock.stability;
+}
+assert.equal(parleyStability(false),62,"强攻拿下：义字当头的基础稳定度 62");
+assert.equal(parleyStability(true),52,"劝降拿下：收编来的人压不住街面，稳定度 -10");
 
 console.log("structure and core-loop tests passed");
