@@ -203,7 +203,7 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   troops=clamp(Math.round(troops),10,s.crew);
   if(!Number.isFinite(troops))throw new Error("invalid troops");
   const ids=leaders.map(o=>o.id),est=estimateBattle(s,targetId,ids,troops,tactic);
-  const mods={multRest:1,moraleFloor:0,convertRate:0,pressed:false,retreatShield:false};
+  const mods={multRest:1,moraleFloor:0,convertRate:0,pressed:false,retreatShield:false,dueled:false,aqiRisk:false};
   if(ids.includes("player"))mods.moraleFloor=45;                                  // 沈川「沈家之后」
   if(ids.includes("yerong"))mods.retreatShield=true;                              // 叶蓉在阵：撤退不掉士气（经营首次参战）
   if(ids.includes("xiejiu")&&(s.winStreak||0)>=2)mods.multRest*=1.05;             // 谢九「只服胜者」
@@ -232,12 +232,12 @@ function officerProposals(s,session){
   if(sm&&session.stage<=2&&sm.stats.scheme>=70)
     out.push({id:"flank",speaker:"苏曼青",text:"「他们左翼是空的」",effect:"势↑ 伤亡↓",mult:1+sm.stats.scheme/900,casualtyMult:.9,priority:2});
   if(lineupOfficer(s,session,"weixiaolou")&&!s.intel[session.targetId])
-    out.push({id:"backdoor",speaker:"魏小楼",text:"「后门我一直留着」",effect:"势↑ 当场揭穿驻防",mult:1.12,casualtyMult:1,priority:3});
+    out.push({id:"backdoor",speaker:"魏小楼",text:"「后门我一直留着」",effect:"势↑ 当场揭穿驻防",mult:1.12,casualtyMult:1,priority:5});
   if(cy&&session.momentum>20)
-    out.push({id:"parley",speaker:"程野",text:"「让我去喊一嗓子」",effect:"胜则收编对方的人",mult:.95,casualtyMult:1,convert:cy.stats.charm/200,priority:4});
+    out.push({id:"parley",speaker:"程野",text:"「让我去喊一嗓子」",effect:"胜则收编对方的人",mult:.95,casualtyMult:1,convert:cy.stats.charm/200,priority:3});
   if(lineupOfficer(s,session,"yerong")&&session.stage<=2)
     out.push({id:"supply",speaker:"叶蓉",text:"「退路和粮草我安排好了」",effect:"伤亡↓↓",mult:1,casualtyMult:.75,priority:2});
-  const dc=duelChallenger(s,session);
+  const dc=session.mods.dueled?null:duelChallenger(s,session);
   if(dc&&duelTarget(s,session))
     out.push({id:"duel",speaker:dc.name,text:"「那个人交给我」",effect:"单挑：胜则压制，败则受伤",mult:1,casualtyMult:1,priority:4});
   if(lineupOfficer(s,session,"aqi")&&session.stage>=2)
@@ -250,6 +250,7 @@ function duelChallenger(s,session){return["hanbiao","zhaokui","xiejiu"].map(id=>
 function resolveDuel(s,session,rng){
   const me=duelChallenger(s,session),foe=duelTarget(s,session);
   if(!me||!foe)return"";
+  session.mods.dueled=true;                                        // 一场血拼只能单挑一次，否则 multRest 会连乘到 1.56
   let p=.5+(me.stats.force-foe.stats.force)/200;
   if(lineupOfficer(s,session,"hanbiao"))p+=.15;                    // 韩彪「顶门硬骨」：压住对方猛将
   p=clamp(p,.15,.85);                                              // 加成后再夹取，上限不被突破
@@ -278,11 +279,11 @@ function applyStageChoice(s,optionId,rng=Math.random){
   if(opt.id==="press")session.mods.pressed=true;
   if(opt.id==="backdoor"){s.intel[session.targetId]=true;extra=`魏小楼把${TERRITORY_DEFS[session.targetId].name}的真实驻防摊在了你面前。`}
   if(opt.id==="parley")session.mods.convertRate=opt.convert;
-  if(opt.id==="rearguard"){const a=officer(s,"aqi");if(a)a.exp+=3}
-  if(opt.id==="duel")extra=resolveDuel(s,session,rng);
+  if(opt.id==="rearguard"){const a=officer(s,"aqi");if(a)a.exp+=3;session.mods.aqiRisk=true}
   const u=1-STAGE_SWING+rng()*STAGE_SWING*2;
   const delta=(session.ratio*u*(opt.mult??1)*session.mods.multRest-1)*33.3;
   session.momentum=Math.round((session.momentum+delta)*10)/10;
+  if(opt.id==="duel")extra=resolveDuel(s,session,rng);                     // multRest 名为「剩余段」：单挑结果只能影响后续段，不能抬高本段
   const stageWon=delta>=0,ahead=session.momentum>=0;                       // stageWon=本段打赢没有；ahead=累计是否领先
   const loss=stageLoss(s,session,ahead,(opt.casualtyMult??1),rng);         // 伤亡按累计局势定档，避免优势方被单段波动多收血
   const told=session.stage===3?ahead:stageWon;                             // 决胜段的叙述必须与最终胜负一致
@@ -303,7 +304,12 @@ function finishBattle(s,rng=Math.random){
   s.battles++;s.lastBattleMonth=s.month;s.training=Math.max(0,(s.training||0)-8);
   change(s,"heat",won?8:retreated?3:5);
   leaders.forEach(o=>{o.battles++;o.merit+=Math.round((won?5:2)*meritMult);o.exp+=won?3:1;o.loyalty=clamp(o.loyalty+(won?2:-2));if(o.id==="aqi"){const k=pick(["force","command","scheme","charm"],rng);o.stats[k]=clamp(o.stats[k]+rand(1,2,rng),1,99)}});
-  const injured=[];leaders.forEach(o=>{if(o.id!=="player"&&!o.injured&&chance(won?.08:retreated?.05:.18,rng)){o.injured=rand(1,3,rng);injured.push(o.name)}});
+  const injured=[];leaders.forEach(o=>{
+    if(o.id==="player")return;
+    if(o.injured>0){injured.push(o.name);return}                                 // 单挑当场受伤的也要写进战报
+    const risk=(won?.08:retreated?.05:.18)+(o.id==="aqi"&&session.mods.aqiRisk?.15:0);   // 阿七断后更容易挂彩
+    if(chance(risk,rng)){o.injured=rand(1,3,rng);injured.push(o.name)}
+  });
   let captured=null;
   if(won){
     s.wins++;s.winStreak=(s.winStreak||0)+1;
@@ -366,7 +372,12 @@ function checkPromises(s){if(s.flags.warPromise&&s.month>s.flags.warPromise&&s.l
 function officerTension(s){ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{if(o.resentment>=70&&o.loyalty<45&&chance(.2)){o.side="defected";s.crew=Math.max(1,s.crew-8);change(s,"morale",-10);log(s,"bad",`${o.name}带着8个人离开了和联胜。`)}else if(o.loyalty<35)change(s,"morale",-1)})}
 
 function advanceMonth(s,force=false){if(s.battleSession){toast("先把这场血拼打完");return false}if(s.ended)return false;if(s.ap>0&&!force){enqueue({title:"本月还有行动点",body:`<p>还剩 <b>${s.ap}</b> 个行动点。它们不会带到下个月。</p>`,options:[option("继续安排","回到议事堂",()=>{}),option("直接进入下月","放弃剩余行动点",()=>setTimeout(()=>advanceMonth(s,true),80),"danger")]},"时间确认");return false}
-  s.month++;s.ap=3;s.usedActions={};s.lastAction=null;applyEconomy(s);checkInsolvency(s);ownedOfficers(s).forEach(o=>{if(o.injured>0){o.injured--;if(o.injured===0)log(s,"good",`${o.name}伤愈回到了祖堂。`)}if(o.exp>=10){const k=pick(Object.keys(o.stats));o.stats[k]=clamp(o.stats[k]+1,1,99);o.exp-=10}});change(s,"morale",Math.round((58-s.morale)*.18));change(s,"heat",-2);refreshRecruitMarket(s);enemyGrowth(s);maybeUnlockNamed(s);checkPromises(s);officerTension(s);enemyAttack(s);
+  s.month++;s.ap=3;s.usedActions={};s.lastAction=null;applyEconomy(s);checkInsolvency(s);
+  // 伤病对所有人愈合：单挑会打伤敌将，而 factionLeaders 过滤 injured<=0，
+  // 不让敌将痊愈会永久断掉战后收编那条线（韩彪/魏小楼从此再也招不到）。
+  s.officers.forEach(o=>{if(o.injured>0){o.injured--;if(o.injured===0&&o.side==="player")log(s,"good",`${o.name}伤愈回到了祖堂。`)}});
+  ownedOfficers(s).forEach(o=>{if(o.exp>=10){const k=pick(Object.keys(o.stats));o.stats[k]=clamp(o.stats[k]+1,1,99);o.exp-=10}});
+  change(s,"morale",Math.round((58-s.morale)*.18));change(s,"heat",-2);refreshRecruitMarket(s);enemyGrowth(s);maybeUnlockNamed(s);checkPromises(s);officerTension(s);enemyAttack(s);
   // 老街在反扑里失守会当场结束这一局，别再往队列里塞这个月的剧情弹窗。
   if(s.ended){saveGame();renderAll();pumpModal();return true}
   if(s.month===4&&!s.flags.fatherRetired){s.flags.fatherRetired=true;enqueue({title:"沈振海最后一次走进祖堂",portrait:CHARACTER_DEFS.father.portrait,body:"<p>他比上个月更瘦，却自己走完了从门口到主位的路。他没有坐，只把蓝色旧账簿放在你的位置上。<span class='dialogue'>“以后这扇门，我不进了。”</span></p><p>赵魁低下头，苏曼青合上笔，程野替他拉开了门。父亲没有回头。</p>",options:[option("起身送他到门口","三名旧部忠诚+5；义+2",()=>{["zhaokui","sumanqing","chengye"].forEach(id=>loyalty(s,id,5));markStyle(s,"yi",2)}),option("留在主位上","声望+5；威+2",()=>{change(s,"rep",5);markStyle(s,"wei",2)})]},"父亲退场")}

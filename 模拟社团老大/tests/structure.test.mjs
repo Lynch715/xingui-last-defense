@@ -336,19 +336,34 @@ game.applyStageChoice(spy,"backdoor",()=>.5);
 assert.equal(spy.intel.south_dock,true,"后门提议必须当场揭穿驻防");
 assert.ok(spy.battleSession.log[0].text.includes("魏小楼"),"揭穿要写进战报");
 assert.ok(!game.stageOptions(spy,spy.battleSession).some(o=>o.id==="backdoor"),"情报已知后不再重复提议");
-// 劝降真的会把敌兵变成自己人
+// 劝降真的会把敌兵变成自己人。用 guard=70 让 enemyLoss 足够大，转化量才可观。
 const talk=game.createInitialState("沈劝降","yi","standard");
-talk.crew=300;talk.morale=95;talk.territories.south_dock.guard=8;
+talk.crew=300;talk.morale=95;talk.territories.south_dock.guard=70;
 const tr=()=>.99;
 game.startBattle(talk,{targetId:"south_dock",leaderIds:["player","chengye"],troops:200,tactic:"steady"},tr);
 game.applyStageChoice(talk,"hold",tr);
 game.applyStageChoice(talk,"hold",tr);
 assert.ok(talk.battleSession.momentum>20,"这局必须打出优势，否则劝降不会出现");
 assert.ok(game.stageOptions(talk,talk.battleSession).some(o=>o.id==="parley"));
-const crewBeforeParley=talk.crew;
+const parleyRate=game.stageOptions(talk,talk.battleSession).find(o=>o.id==="parley").convert;
+const crewBeforeStage3=talk.crew,lossBeforeStage3=talk.battleSession.losses;
 game.applyStageChoice(talk,"parley",tr);
 assert.equal(talk.lastBattle.outcome,"win");
-assert.ok(talk.crew>crewBeforeParley-talk.lastBattle.losses,"劝降胜利后应有敌兵加入，抵消部分伤亡");
+const stage3Loss=talk.lastBattle.losses-lossBeforeStage3;
+const gain=Math.round(talk.lastBattle.enemyLoss*parleyRate);
+assert.ok(gain>0,"转化人数必须大于0，否则这条断言没有意义");
+assert.equal(talk.crew,crewBeforeStage3-stage3Loss+gain,"最终人手 = 战前 - 本段伤亡 + 转化所得");
+assert.ok(talk.log.some(l=>l.text.includes("程野把")),"转化要留下江湖记事");
+// 对照组：同样局势下选 hold 则不该有任何转化
+const noTalk=game.createInitialState("沈不劝","yi","standard");
+noTalk.crew=300;noTalk.morale=95;noTalk.territories.south_dock.guard=70;
+const nr=()=>.99;
+game.startBattle(noTalk,{targetId:"south_dock",leaderIds:["player","chengye"],troops:200,tactic:"steady"},nr);
+game.applyStageChoice(noTalk,"hold",nr);
+game.applyStageChoice(noTalk,"hold",nr);
+const noCrewBefore=noTalk.crew,noLossBefore=noTalk.battleSession.losses;
+game.applyStageChoice(noTalk,"hold",nr);
+assert.equal(noTalk.crew,noCrewBefore-(noTalk.lastBattle.losses-noLossBefore),"没劝降就不该有人加入");
 // 阿七断后：成长更快
 const rear=joinNamed(game.createInitialState("沈断后","yi","standard"),"aqi");
 rear.crew=200;
@@ -391,5 +406,38 @@ noFoe.crew=200;
 game.startBattle(noFoe,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:100,tactic:"assault"});
 noFoe.officers.filter(o=>o.side==="east").forEach(o=>{o.injured=2});
 assert.ok(!game.stageOptions(noFoe,noFoe.battleSession).some(o=>o.id==="duel"),"敌方无可战头目时不给单挑");
+
+// 单挑打伤的敌将必须会痊愈，否则战后收编那条线会被永久掐断
+const healFoe=joinNamed(game.createInitialState("沈愈合","wei","standard"),"hanbiao");
+healFoe.crew=400;
+game.startBattle(healFoe,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:200,tactic:"assault"});
+game.applyStageChoice(healFoe,"duel",()=>.01);
+const hurtFoe=healFoe.officers.find(o=>o.side==="east"&&o.injured>0);
+assert.ok(hurtFoe,"单挑胜利应打伤一名敌将");
+healFoe.battleSession=null;
+for(let i=0;i<4;i++)game.advanceMonth(healFoe,true);
+assert.equal(healFoe.officers.find(o=>o.id===hurtFoe.id).injured,0,"敌将伤病必须随月份愈合");
+// 单挑一场只能打一次，否则 multRest 会叠到 1.56
+const once=joinNamed(game.createInitialState("沈一次","wei","standard"),"hanbiao");
+once.crew=400;
+game.startBattle(once,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:200,tactic:"assault"});
+game.applyStageChoice(once,"duel",()=>.01);
+assert.equal(once.battleSession.mods.dueled,true);
+assert.equal(once.battleSession.mods.multRest,1.25);
+assert.ok(!game.stageOptions(once,once.battleSession).some(o=>o.id==="duel"),"一场血拼只能单挑一次");
+// 单挑发生在第1段时，multRest 只作用于后续段，不该抬高本段
+const timing=joinNamed(game.createInitialState("沈时序","wei","standard"),"hanbiao");
+timing.crew=400;
+const tSess=game.startBattle(timing,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:200,tactic:"assault"});
+const tRatio=tSess.ratio;
+game.applyStageChoice(timing,"duel",()=>.01);
+assert.equal(timing.battleSession.momentum,Math.round((tRatio*(1-.295+.01*.59)*1*1-1)*33.3*10)/10,"本段的势必须按 multRest=1 结算");
+// 阿七断后会提高他自己的受伤概率
+const risky=joinNamed(game.createInitialState("沈断后险","yi","standard"),"aqi");
+risky.crew=200;
+game.startBattle(risky,{targetId:"south_dock",leaderIds:["player","aqi"],troops:100,tactic:"steady"});
+game.applyStageChoice(risky,"hold",()=>.5);
+game.applyStageChoice(risky,"rearguard",()=>.5);
+assert.equal(risky.battleSession.mods.aqiRisk,true,"断后要记下加成风险");
 
 console.log("structure and core-loop tests passed");
