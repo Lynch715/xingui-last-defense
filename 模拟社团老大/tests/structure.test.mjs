@@ -517,4 +517,39 @@ const noStreak=joinNamed(game.createInitialState("沈无连胜","yi","standard")
 noStreak.crew=200;noStreak.winStreak=1;
 assert.equal(game.startBattle(noStreak,{targetId:"south_dock",leaderIds:["player","xiejiu"],troops:100,tactic:"steady"}).mods.multRest,1,"连胜不足2场则无加成");
 
+// 旧档缺字段应补默认值，且不得因此被判废
+const mig=game.createInitialState("沈迁移","yi","standard");
+delete mig.battleSession;delete mig.winStreak;
+assert.equal(game.normalizeState(mig).battleSession,null,"旧档缺 battleSession 应补 null");
+assert.equal(mig.winStreak,0,"旧档缺 winStreak 应补 0");
+// 损坏的会话必须丢弃
+function corrupt(mutate){
+  const c=game.createInitialState("沈坏档","yi","standard");
+  c.crew=120;
+  game.startBattle(c,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+  mutate(c);
+  return game.normalizeState(c);
+}
+assert.equal(corrupt(c=>{c.battleSession.stage=9}).battleSession,null,"stage 越界要丢弃");
+assert.equal(corrupt(c=>{c.battleSession.stage=0}).battleSession,null,"stage 为0要丢弃");
+assert.equal(corrupt(c=>{c.battleSession.targetId="不存在的地盘"}).battleSession,null,"目标地盘不存在要丢弃");
+assert.equal(corrupt(c=>{c.battleSession.leaderIds=[]}).battleSession,null,"没有可用头目要丢弃");
+assert.equal(corrupt(c=>{c.battleSession.leaderIds=["hewanshan"]}).battleSession,null,"阵容全是敌方头目要丢弃");
+assert.equal(corrupt(c=>{c.battleSession.momentum="很多"}).battleSession,null,"势不是数字要丢弃");
+assert.equal(corrupt(c=>{c.battleSession.troops=NaN}).battleSession,null,"兵力是NaN要丢弃");
+assert.equal(corrupt(c=>{delete c.battleSession.mods}).battleSession,null,"缺 mods 要丢弃");
+assert.equal(corrupt(c=>{delete c.battleSession.log}).battleSession,null,"缺 log 要丢弃");
+// 丢弃时要给玩家留一条记事
+const dropped=corrupt(c=>{c.battleSession.stage=9});
+assert.ok(dropped.log.some(l=>l.text.includes("中断")),"丢弃会话要写进江湖录");
+// 完好会话经 JSON 往返后必须保留并可继续
+const ok=game.createInitialState("沈好档","yi","standard");
+ok.crew=120;
+game.startBattle(ok,{targetId:"south_dock",leaderIds:["player","zhaokui"],troops:60,tactic:"steady"});
+const roundTrip=game.normalizeState(JSON.parse(JSON.stringify(ok)));
+assert.ok(roundTrip.battleSession,"完好会话必须保留");
+assert.equal(roundTrip.battleSession.stage,1);
+assert.deepEqual(game.stageOptions(roundTrip,roundTrip.battleSession),game.stageOptions(ok,ok.battleSession),"往返后重建的选项必须一致");
+assert.equal(game.applyStageChoice(roundTrip,"hold",()=>.5).ended,false,"往返后必须能继续推进");
+
 console.log("structure and core-loop tests passed");

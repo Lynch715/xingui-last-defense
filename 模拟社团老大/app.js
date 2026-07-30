@@ -403,10 +403,24 @@ function pumpModal(){if(typeof document==="undefined"||modalBusy)return;if(!moda
 function toast(text){const el=$("toast");if(!el)return;el.textContent=text;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),1700)}
 
 function saveGame(){if(!S||typeof localStorage==="undefined")return false;try{localStorage.setItem(SAVE_KEY,JSON.stringify(S));saveErrorNotified=false;return true}catch(error){if(typeof console!=="undefined")console.error("[雾港] 本地存档失败",error);if(!saveErrorNotified){saveErrorNotified=true;toast("存档失败：本机存储空间可能不足")}return false}}
+// 损坏的会话一律丢弃而不修补：人手是逐段扣的，存档在任何时刻都自洽，
+// 丢掉最多只损失一块没打下来的地，绝不会凭空多人或少人。
+function validBattleSession(s){
+  const b=s.battleSession;
+  if(!b||typeof b!=="object")return false;
+  if(!TERRITORY_DEFS[b.targetId]||!s.territories[b.targetId])return false;
+  if(!Number.isFinite(b.stage)||b.stage<1||b.stage>3)return false;
+  if(!Number.isFinite(b.momentum)||!Number.isFinite(b.ratio)||!Number.isFinite(b.troops))return false;
+  if(!b.mods||typeof b.mods!=="object"||!Array.isArray(b.log))return false;
+  return Array.isArray(b.leaderIds)&&b.leaderIds.some(id=>{const o=officer(s,id);return o&&o.side==="player"});
+}
 function normalizeState(s){if(!s||typeof s!=="object"||s.version!==VERSION||typeof s.name!=="string"||!Array.isArray(s.officers)||!s.territories||!Object.keys(TERRITORY_DEFS).every(id=>s.territories[id]))return null;s.flags={fatherRetired:false,aqiUnlocked:false,xieUnlocked:false,yeUnlocked:false,coalition:false,debtCrisisQueued:false,emergencyLoanTaken:false,...(s.flags||{})};s.insolvencyMonths=Number.isFinite(s.insolvencyMonths)?Math.max(0,s.insolvencyMonths):0;
   // 弹窗队列只活在内存里：载入时一定没有待答的危机弹窗，所以这个标志必须归零。
   // 否则在危机弹窗开着时刷新，标志会以 true 落盘，checkInsolvency 从此永远直接返回。
-  s.flags.debtCrisisQueued=false;return s}
+  s.flags.debtCrisisQueued=false;
+  s.winStreak=Number.isFinite(s.winStreak)?Math.max(0,s.winStreak):0;
+  if(!validBattleSession(s)){if(s.battleSession)log(s,"warn","上一场血拼中断，队伍已经撤回老街。");s.battleSession=null}
+  return s}
 function loadGame(){if(typeof localStorage==="undefined")return null;try{return normalizeState(JSON.parse(localStorage.getItem(SAVE_KEY)||"null"))}catch{return null}}
 function deleteSave(){if(typeof localStorage!=="undefined")localStorage.removeItem(SAVE_KEY)}
 
