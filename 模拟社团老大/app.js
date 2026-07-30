@@ -226,7 +226,9 @@ function stageOptions(s,session){
   return out;
 }
 // 效果按属性缩放，不是固定值——否则杂鱼说客和程野没区别。
-// priority 决定被 stageOptions 截断时谁先留下：稀有/一次性的提议排前面。
+// priority 决定被 stageOptions 截断时谁先留下：稀有/一次性的提议排前面，且必须两两不同——
+// 一旦并列，留下谁就取决于 Array#sort 的稳定性和这里的书写顺序，玩家看得见的结果不该押在那上面。
+// backdoor 5（每块地只能用一次）＞ duel 4（每场一次）＞ parley 3（需势>20）＞ flank 2 ＞ supply 1.5 ＞ rearguard 1
 function officerProposals(s,session){
   const out=[],sm=lineupOfficer(s,session,"sumanqing"),cy=lineupOfficer(s,session,"chengye");
   if(sm&&session.stage<=2&&sm.stats.scheme>=70)
@@ -236,7 +238,7 @@ function officerProposals(s,session){
   if(cy&&session.momentum>20)
     out.push({id:"parley",speaker:"程野",text:"「让我去喊一嗓子」",effect:"胜则收编对方的人，但这块地不服你",mult:.88,casualtyMult:1,convert:cy.stats.charm/260,priority:3});
   if(lineupOfficer(s,session,"yerong")&&session.stage<=2)
-    out.push({id:"supply",speaker:"叶蓉",text:"「退路和粮草我安排好了」",effect:"伤亡↓↓",mult:1,casualtyMult:.75,priority:2});
+    out.push({id:"supply",speaker:"叶蓉",text:"「退路和粮草我安排好了」",effect:"伤亡↓↓",mult:1,casualtyMult:.75,priority:1.5});
   const dc=session.mods.dueled?null:duelChallenger(s,session);
   if(dc&&duelTarget(s,session))
     out.push({id:"duel",speaker:dc.name,text:"「那个人交给我」",effect:"单挑：胜则压制，败则受伤",mult:1,casualtyMult:1,priority:4});
