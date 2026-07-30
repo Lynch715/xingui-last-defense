@@ -440,4 +440,15 @@ game.applyStageChoice(risky,"hold",()=>.5);
 game.applyStageChoice(risky,"rearguard",()=>.5);
 assert.equal(risky.battleSession.mods.aqiRisk,true,"断后要记下加成风险");
 
+// 单挑当场打伤的自己人必须出现在战报的伤员名单里，且不重复。
+// startBattle 会把已受伤的头目剔出阵容，所以结算时 injured>0 的必然是本场负伤的。
+const rep=joinNamed(game.createInitialState("沈伤报","wei","standard"),"hanbiao");
+rep.crew=400;
+game.startBattle(rep,{targetId:"south_dock",leaderIds:["player","hanbiao"],troops:200,tactic:"assault"});
+game.applyStageChoice(rep,"duel",()=>.999);   // 必败 -> 韩彪当场受伤
+assert.ok(rep.officers.find(o=>o.id==="hanbiao").injured>0,"落败者应当场受伤");
+game.applyStageChoice(rep,"hold",()=>.5);
+game.applyStageChoice(rep,"hold",()=>.5);
+assert.deepEqual(rep.lastBattle.injured,["韩彪"],"单挑负伤的头目要进战报，且只出现一次");
+
 console.log("structure and core-loop tests passed");
