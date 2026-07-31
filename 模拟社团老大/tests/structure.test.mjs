@@ -689,4 +689,22 @@ const upBase=game.monthlyUpkeep(up);
 up.crew=22;up.regroup=10;up.wounded=10;
 assert.equal(game.monthlyUpkeep(up),upBase,"维护费按总人手算，养伤的人不免费");
 
+// ---- 血拼消耗行动点 ----
+// 这是"5分钟通关"的根因之一：过去发起进攻零成本，一个月可以打无限场。
+const apCost=game.createInitialState("沈行动点","yi","standard");
+apCost.crew=200;
+game.startBattle(apCost,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+assert.equal(apCost.ap,2,"开战消耗1个行动点");
+while(apCost.battleSession)game.applyStageChoice(apCost,"hold",seeded(3));
+
+const apBroke=game.createInitialState("沈没点数","yi","standard");
+apBroke.crew=200;apBroke.ap=0;
+assert.throws(()=>game.startBattle(apBroke,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"}),/no action point/);
+assert.equal(apBroke.crew,200,"被拒的开战不得扣人手");
+
+// 错误优先级：人手不足要先于行动点不足报出来，界面提示才对得上
+const apOrder=game.createInitialState("沈两缺","yi","standard");
+apOrder.crew=9;apOrder.ap=0;
+assert.throws(()=>game.startBattle(apOrder,{targetId:"south_dock",leaderIds:["player"],troops:9,tactic:"steady"}),/not enough crew/);
+
 console.log("structure and core-loop tests passed");
