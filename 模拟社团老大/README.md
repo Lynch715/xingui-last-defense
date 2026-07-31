@@ -31,8 +31,11 @@ python3 -m http.server 8777
 ```bash
 node --check app.js
 node tests/structure.test.mjs
+node tests/balance.test.mjs
 python3 build_single.py
 ```
+
+`balance.test.mjs` 用固定种子的策略机器人跑完整局，锁住难度曲线——改动战斗或经济数值后它会先叫。
 
 打包后会生成额外的 `模拟社团老大-单文件版.html`，不覆盖模块化源码。
 
