@@ -171,7 +171,7 @@ capLoss.battleSession.losses=59;
 game.applyStageChoice(capLoss,"hold",()=>.5);
 assert.ok(capLoss.battleSession.losses<=60,`伤亡 ${capLoss.battleSession.losses} 不得超过出战的 60 人`);
 // rng=0 -> u=0.705，走劣势分支，覆盖 .25 档与"对面顶住了"文案。
-// 兵力必须真的处于劣势：200人打驻防46是碾压，ratio≈2.5，再差的骰子也翻不出负势。
+// 兵力必须真的处于劣势：30人打驻防68，ratio<1，再好的骰子也翻不出正势。
 const bad=game.createInitialState("沈劣势","yi","standard");
 bad.crew=300;
 const badSess=game.startBattle(bad,{targetId:"south_dock",leaderIds:["player"],troops:30,tactic:"steady"});
