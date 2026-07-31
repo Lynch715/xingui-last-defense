@@ -734,4 +734,35 @@ assert.equal(rescued.battleSession,null,"损坏的会话必须丢弃");
 assert.equal(rescued.regroup,60,"出战的60人要还进整补池");
 assert.equal(game.totalCrew(rescued),200,"总人手不得因为存档损坏而减少");
 
+
+// ---- 三池化之后的连带修正：任何"从组织里扣人"的地方都不能只盯着能战池 ----
+// 打完一仗 s.crew 常常是 0（人都在整补），旧写法 Math.max(1,s.crew-n) 会在这种局面下凭空造人。
+const drainEmpty=game.createInitialState("沈空池","yi","standard");
+drainEmpty.crew=0;drainEmpty.regroup=80;drainEmpty.wounded=0;
+assert.equal(game.drainCrew(drainEmpty,8),8,"能战池空时要从整补池里扣");
+assert.equal(drainEmpty.crew,0);
+assert.equal(drainEmpty.regroup,72);
+assert.equal(game.totalCrew(drainEmpty),72,"总人手必须真的减少 8");
+
+const drainOrder=game.createInitialState("沈顺序","yi","standard");
+drainOrder.crew=3;drainOrder.regroup=4;drainOrder.wounded=10;
+assert.equal(game.drainCrew(drainOrder,9),9,"按 能战→整补→养伤 的顺序扣");
+assert.deepEqual([drainOrder.crew,drainOrder.regroup,drainOrder.wounded],[0,0,8]);
+
+const drainOver=game.createInitialState("沈扣光","yi","standard");
+drainOver.crew=2;drainOver.regroup=0;drainOver.wounded=1;
+assert.equal(game.drainCrew(drainOver,50),3,"人不够时只扣得到实际人数，不得扣成负数");
+assert.equal(game.totalCrew(drainOver),0);
+assert.ok(drainOver.crew>=0&&drainOver.regroup>=0&&drainOver.wounded>=0,"三池都不得为负");
+
+// 头目叛离：带走的人要从整个组织算，且不得凭空造人
+const defect=game.createInitialState("沈叛离","yi","standard");
+defect.crew=0;defect.regroup=80;
+const defector=defect.officers.find(o=>o.id==="zhaokui");
+defector.resentment=90;defector.loyalty=20;
+const beforeDefect=game.totalCrew(defect);
+game.officerTension(defect,()=>0);                       // rng=0 → chance(.2) 必定触发
+assert.equal(defector.side,"defected","这个局面下必须叛离");
+assert.equal(game.totalCrew(defect),beforeDefect-8,"叛离带走的8人必须真的从总人手里消失");
+
 console.log("structure and core-loop tests passed");
