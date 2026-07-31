@@ -311,6 +311,9 @@ function finishBattle(s,rng=Math.random){
   const session=s.battleSession;if(!session)return null;
   const {targetId,tactic,troops}=session,t=s.territories[targetId],oldOwner=t.owner;
   const won=session.outcome==="win",retreated=session.outcome==="retreat";
+  // 出战的人在 startBattle 就离开了能战池，这里分三份收尾。阵亡的那部分永久消失——这是"打不起"的根源。
+  const survivors=Math.max(0,session.troops-session.losses),woundedBack=Math.round(session.losses*.55);
+  s.regroup=(s.regroup||0)+survivors;s.wounded=(s.wounded||0)+woundedBack;
   const leaders=session.leaderIds.map(id=>officer(s,id)).filter(Boolean);
   const meritMult=won&&session.leaderIds.includes("tangji")?1.5:1;                 // 唐霁「唯能者居」
   s.battles++;s.lastBattleMonth=s.month;s.training=Math.max(0,(s.training||0)-8);

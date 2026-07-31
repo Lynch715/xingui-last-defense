@@ -598,4 +598,27 @@ function parleyStability(useParley){
 assert.equal(parleyStability(false),62,"强攻拿下：义字当头的基础稳定度 62");
 assert.equal(parleyStability(true),52,"劝降拿下：收编来的人压不住街面，稳定度 -10");
 
+// ---- 战后人手分流 ----
+// 出战的人在 startBattle 离池，finishBattle 必须把他们分成幸存(整补)/重伤(养伤)/阵亡(消失)三份。
+const settle=game.createInitialState("沈结算","yi","standard");
+settle.crew=120;
+game.resolveBattle(settle,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"},seeded(7));
+const settleRep=settle.lastBattle;
+const settleWounded=Math.round(settleRep.losses*.55);
+assert.ok(settleRep.losses>0,"这场仗必须真的死人，否则断言无意义");
+assert.equal(settle.crew,60,"出战的60人不得直接回到能战池");
+assert.equal(settle.regroup,60-settleRep.losses,"幸存者全部进整补");
+assert.equal(settle.wounded,settleWounded,"伤亡的55%进养伤");
+assert.equal(game.totalCrew(settle),120-(settleRep.losses-settleWounded),"总人手只少了阵亡的那部分");
+
+// 撤退与战败走同一条分流路径，不能只在胜利分支里结算。
+const settleRetreat=game.createInitialState("沈撤退结算","yi","standard");
+settleRetreat.crew=120;
+game.startBattle(settleRetreat,{targetId:"south_dock",leaderIds:["player","sumanqing"],troops:60,tactic:"steady"});
+game.applyStageChoice(settleRetreat,"hold",seeded(11));
+game.applyStageChoice(settleRetreat,"withdraw",seeded(11));
+assert.equal(settleRetreat.battleSession,null,"撤退后会话必须结束");
+assert.equal(settleRetreat.regroup+settleRetreat.wounded>0,true,"撤退回来的人也要进整补/养伤，不能凭空消失");
+assert.equal(settleRetreat.crew,60,"撤退不把人直接还回能战池");
+
 console.log("structure and core-loop tests passed");
