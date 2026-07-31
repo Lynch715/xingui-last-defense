@@ -621,4 +621,48 @@ assert.equal(settleRetreat.battleSession,null,"撤退后会话必须结束");
 assert.equal(settleRetreat.regroup+settleRetreat.wounded>0,true,"撤退回来的人也要进整补/养伤，不能凭空消失");
 assert.equal(settleRetreat.crew,60,"撤退不把人直接还回能战池");
 
+// ---- 每月回流 ----
+const rec=game.createInitialState("沈回流","yi","standard");
+rec.crew=0;rec.regroup=48;rec.wounded=10;rec.cash=100;
+const recOut=game.recoverCrew(rec);
+assert.equal(recOut.back,24,"整补每月回一半：ceil(48*0.5)");
+assert.equal(rec.regroup,24);
+assert.equal(recOut.healed,3,"养伤每月回 ceil(10*0.22)=3");
+assert.equal(recOut.cost,4,"医药费 = 伤员数 * 0.4");
+assert.equal(rec.cash,96,"医药费从现金里扣");
+assert.equal(rec.wounded,7);
+assert.equal(rec.crew,27,"24 整补归队 + 3 伤愈");
+
+// 付不出药钱：回归减半、掉士气、且不扣钱（钱本来就不够）
+const broke=game.createInitialState("沈没钱养伤","yi","standard");
+broke.crew=0;broke.regroup=0;broke.wounded=10;broke.cash=1;
+const brokeMorale=broke.morale;
+const brokeOut=game.recoverCrew(broke);
+assert.equal(brokeOut.broke,true);
+assert.equal(brokeOut.healed,1,"付不起时回归减半：floor(3/2)");
+assert.equal(brokeOut.cost,0,"付不起就不扣钱");
+assert.equal(broke.cash,1);
+assert.equal(broke.morale,brokeMorale-4);
+
+// 尾数：整补只剩 3 人时，不能因为"至少回 5 人"而回出负数
+const tail=game.createInitialState("沈收尾","yi","standard");
+tail.crew=0;tail.regroup=3;tail.wounded=0;
+assert.equal(game.recoverCrew(tail).back,3,"整补余数不足5人时一次归队完毕");
+assert.equal(tail.regroup,0);
+assert.equal(tail.crew,3);
+
+// 空池不得产生任何副作用
+const idle=game.createInitialState("沈无伤","yi","standard");
+const idleCash=idle.cash,idleCrew=idle.crew;
+const idleOut=game.recoverCrew(idle);
+assert.deepEqual([idleOut.back,idleOut.healed,idleOut.cost],[0,0,0]);
+assert.equal(idle.cash,idleCash);
+assert.equal(idle.crew,idleCrew);
+
+// 推进月份必须触发回流
+const flow=game.createInitialState("沈过月","yi","standard");
+flow.regroup=20;flow.ap=0;
+game.advanceMonth(flow,true);
+assert.ok(flow.regroup<20,"advanceMonth 必须调用 recoverCrew");
+
 console.log("structure and core-loop tests passed");

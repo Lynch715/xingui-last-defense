@@ -168,6 +168,20 @@ function recruitNamed(s,id){
 function monthlyGross(s){let gross=ownTerritories(s).reduce((sum,id)=>sum+TERRITORY_DEFS[id].income*(s.territories[id].level||1),0);if(hasOfficer(s,"sumanqing"))gross*=1.12;if(hasOfficer(s,"yerong"))gross*=1.15;if(s.creed==="li")gross*=1.12;gross*=diff(s).income;return Math.round(gross)}
 function monthlyUpkeep(s){let crew=s.crew*.13;if(owns(s,"south_dock"))crew*=.9;const officerCost=Math.max(0,ownedOfficers(s).length-4)*1.2,territoryCost=Math.max(0,ownTerritories(s).length-1)*2;return Math.round((crew+officerCost+territoryCost)*10)/10}
 function monthlyNet(s){return Math.round((monthlyGross(s)-monthlyUpkeep(s))*10)/10}
+// 整补两个月归队、养伤四五个月且要花钱——"打完一仗伤不起"的实现在这里。
+// 必须在 applyEconomy 之前调用：医药费要计入当月账面，否则资金链危机会晚一个月才发作。
+function recoverCrew(s){
+  const out={back:0,healed:0,cost:0,broke:false};
+  if(s.regroup>0){out.back=Math.min(s.regroup,Math.max(5,Math.ceil(s.regroup*.5)));s.regroup-=out.back;s.crew+=out.back}
+  if(s.wounded>0){
+    const base=Math.min(s.wounded,Math.max(1,Math.ceil(s.wounded*.22))),cost=Math.round(s.wounded*.4*10)/10;
+    if(s.cash>=cost){addCash(s,-cost);out.cost=cost;out.healed=base}
+    else{out.broke=true;out.healed=Math.floor(base/2);change(s,"morale",-4);log(s,"bad","付不出伤者的药钱，养伤的人回得更慢了。")}
+    s.wounded-=out.healed;s.crew+=out.healed;
+  }
+  if(out.back||out.healed)log(s,"good",`${out.back} 人整补归队，${out.healed} 人伤愈。`);
+  return out;
+}
 function applyEconomy(s){const gross=monthlyGross(s),upkeep=monthlyUpkeep(s),net=Math.round((gross-upkeep)*10)/10;addCash(s,net);s.insolvencyMonths=s.cash<0?(s.insolvencyMonths||0)+1:0;if(owns(s,"golden_bay"))change(s,"heat",2);if(net<0){change(s,"morale",-7);ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{o.loyalty=clamp(o.loyalty-3);o.resentment=clamp(o.resentment+2)});log(s,"bad",`本月收入${gross}万，支出${upkeep}万，账面继续失血。`)}else log(s,"story",`本月地盘净收入 ${net} 万。`);return{gross,upkeep,net}}
 
 function checkInsolvency(s){
@@ -389,7 +403,7 @@ function checkPromises(s){if(s.flags.warPromise&&s.month>s.flags.warPromise&&s.l
 function officerTension(s){ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{if(o.resentment>=70&&o.loyalty<45&&chance(.2)){o.side="defected";s.crew=Math.max(1,s.crew-8);change(s,"morale",-10);log(s,"bad",`${o.name}带着8个人离开了和联胜。`)}else if(o.loyalty<35)change(s,"morale",-1)})}
 
 function advanceMonth(s,force=false){if(s.battleSession){toast("先把这场血拼打完");return false}if(s.ended)return false;if(s.ap>0&&!force){enqueue({title:"本月还有行动点",body:`<p>还剩 <b>${s.ap}</b> 个行动点。它们不会带到下个月。</p>`,options:[option("继续安排","回到议事堂",()=>{}),option("直接进入下月","放弃剩余行动点",()=>setTimeout(()=>advanceMonth(s,true),80),"danger")]},"时间确认");return false}
-  s.month++;s.ap=3;s.usedActions={};s.lastAction=null;applyEconomy(s);checkInsolvency(s);
+  s.month++;s.ap=3;s.usedActions={};s.lastAction=null;recoverCrew(s);applyEconomy(s);checkInsolvency(s);
   // 伤病对所有人愈合：单挑会打伤敌将，而 factionLeaders 过滤 injured<=0，
   // 不让敌将痊愈会永久断掉战后收编那条线（韩彪/魏小楼从此再也招不到）。
   s.officers.forEach(o=>{if(o.injured>0){o.injured--;if(o.injured===0&&o.side==="player")log(s,"good",`${o.name}伤愈回到了祖堂。`)}});
@@ -524,4 +538,4 @@ function lockZoom(){["gesturestart","gesturechange","gestureend"].forEach(t=>doc
 function boot(){lockZoom();const saved=loadGame();$("newGameBtn")?.addEventListener("click",showCreator);$("continueBtn")?.addEventListener("click",()=>{S=loadGame();showGame()});$("creedPicker")?.querySelectorAll("[data-creed]").forEach(b=>b.addEventListener("click",()=>{creatorCreed=b.dataset.creed;$("creedPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("difficultyPicker")?.querySelectorAll("[data-difficulty]").forEach(b=>b.addEventListener("click",()=>{creatorDifficulty=b.dataset.difficulty;$("difficultyPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("startGameBtn")?.addEventListener("click",()=>{S=createInitialState($("playerName").value,creatorCreed,creatorDifficulty);prologueIndex=0;$("creator").classList.add("hidden");$("prologue").classList.remove("hidden");renderPrologue()});$("nextPrologueBtn")?.addEventListener("click",()=>{if(prologueIndex<PROLOGUE.length-1){prologueIndex++;renderPrologue()}else showGame()});$("gameNav")?.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{if(!S){showMenu();return}S.tab=b.dataset.tab;saveGame();renderAll()}));$("endMonthBtn")?.addEventListener("click",()=>S&&advanceMonth(S));$("saveBtn")?.addEventListener("click",()=>{if(saveGame())toast("进度已保存在本机")});$("restartBtn")?.addEventListener("click",()=>{if(confirm("删除当前存档并重新开始？")){deleteSave();S=null;showMenu()}});showMenu();if(saved&&saved.ended){S=saved}}
 
 if(typeof document!=="undefined")document.addEventListener("DOMContentLoaded",boot);
-if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,totalCrew,crewCap,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,applyStageChoice,finishBattle,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
+if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,totalCrew,crewCap,recoverCrew,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,applyStageChoice,finishBattle,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
