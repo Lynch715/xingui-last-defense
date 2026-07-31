@@ -43,14 +43,14 @@ const CHARACTER_DEFS={
 };
 
 const TERRITORY_DEFS={
-  old_street:{name:"旧城老街",owner:"player",income:8,guard:24,bonus:"每次招募额外+2人",neighbors:["south_dock","golden_bay","west_market"]},
-  south_dock:{name:"南港码头",owner:"east",income:13,guard:68,bonus:"每月人手维护成本-10%",neighbors:["old_street","shipyard","central_harbor","west_market"]},
-  shipyard:{name:"红星船厂",owner:"east",income:11,guard:78,bonus:"血拼伤亡-8%",neighbors:["south_dock","central_harbor","new_city"]},
-  golden_bay:{name:"金湾娱乐区",owner:"wan",income:19,guard:64,bonus:"收入高，每月外部压力+2",neighbors:["old_street","new_city","central_harbor"]},
-  new_city:{name:"东部新城",owner:"wan",income:16,guard:82,bonus:"高级人才出现率提升",neighbors:["golden_bay","central_harbor","shipyard","north_yard"]},
-  west_market:{name:"西关批发市场",owner:"long",income:12,guard:60,bonus:"地盘投资价格-15%",neighbors:["old_street","north_yard","central_harbor","south_dock"]},
-  north_yard:{name:"北站货场",owner:"long",income:14,guard:70,bonus:"战败撤退时伤亡-12%",neighbors:["west_market","central_harbor","new_city"]},
-  central_harbor:{name:"中央港区",owner:"coalition",income:28,guard:120,bonus:"控制后即可号令雾港",neighbors:["south_dock","shipyard","golden_bay","new_city","west_market","north_yard"],final:true}
+  old_street:{name:"旧城老街",owner:"player",income:8,guard:44,bonus:"每次招募额外+2人",neighbors:["south_dock","golden_bay","west_market"]},
+  south_dock:{name:"南港码头",owner:"east",income:13,guard:105,bonus:"每月人手维护成本-10%",neighbors:["old_street","shipyard","central_harbor","west_market"]},
+  shipyard:{name:"红星船厂",owner:"east",income:11,guard:121,bonus:"血拼伤亡-8%",neighbors:["south_dock","central_harbor","new_city"]},
+  golden_bay:{name:"金湾娱乐区",owner:"wan",income:19,guard:99,bonus:"收入高，每月外部压力+2",neighbors:["old_street","new_city","central_harbor"]},
+  new_city:{name:"东部新城",owner:"wan",income:16,guard:127,bonus:"高级人才出现率提升",neighbors:["golden_bay","central_harbor","shipyard","north_yard"]},
+  west_market:{name:"西关批发市场",owner:"long",income:12,guard:93,bonus:"地盘投资价格-15%",neighbors:["old_street","north_yard","central_harbor","south_dock"]},
+  north_yard:{name:"北站货场",owner:"long",income:14,guard:108,bonus:"战败撤退时伤亡-12%",neighbors:["west_market","central_harbor","new_city"]},
+  central_harbor:{name:"中央港区",owner:"coalition",income:28,guard:186,bonus:"控制后即可号令雾港",neighbors:["south_dock","shipyard","golden_bay","new_city","west_market","north_yard"],final:true}
 };
 
 const PROLOGUE=[
@@ -444,7 +444,7 @@ function enemyTurn(s,rng=Math.random){
   const t=s.territories[targetId],defender=t.owner;
   // 标度必须和守方同一个量级：守方是 驻防*1.18*1.15 + 两名头目，一块 82 驻防的地盘约 145 点。
   // 旧式的 地盘数*16 只有 32 点，AI 永远打不动任何人——实测 60 个月零次易主。
-  const atk=(territoryCount(s,f)*46+factionLeaders(s,f).reduce((a,o)=>a+leaderScore(o),0)*.8+s.month*.6)*diff(s).battle*(.75+rng()*.5);
+  const atk=(territoryCount(s,f)*71+factionLeaders(s,f).reduce((a,o)=>a+leaderScore(o),0)*.8+s.month*.6)*diff(s).battle*(.75+rng()*.5);
   const defLeaders=defender==="player"?ownedOfficers(s).filter(o=>!o.injured).sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,2):factionLeaders(s,defender).slice(0,2);
   const def=effectiveGuard(s,targetId)*1.18*1.15+defLeaders.reduce((a,o)=>a+leaderScore(o),0);   // 1.15 守方加成：防止 AI 滚雪球滚到玩家无法翻盘
   const won=atk>def,name=TERRITORY_DEFS[targetId].name;
@@ -471,9 +471,12 @@ function enemyTurn(s,rng=Math.random){
   return{faction:f,targetId,defender,won:true};
 }
 
+// 驻防数值由 tests/balance.test.mjs 的三种玩家画像扫描定出（缩放系数 1.55），不是拍脑袋：
+//   莽夫(只打优势)标准 18 月 / 死战 38 月 63%通关；稳健(攒够才打)标准 37 月 100%；躺平必亡。
+// 老街 44 是祖堂的底线——低于此值，卡在一块地的玩家会被 enemyAttack 直接磨死，实测 16/16 灭亡。
 // 成长与上限都随该家地盘数放大：做大的势力防线要跟着变厚，否则玩家滚起雪球之后再无对手。
 // 只在低于上限时增长——一家被打残后地盘变少、上限下降，不应该反过来让它的驻防缩水。
-function enemyGrowth(s){Object.entries(s.territories).forEach(([id,t])=>{if(t.owner==="player")return;const own=territoryCount(s,t.owner),cap=TERRITORY_DEFS[id].final?140:55+own*18,add=Math.max(1,Math.round((1+TERRITORY_DEFS[id].income/18)*(1+own*.25)*diff(s).enemyGrowth));if(t.guard<cap)t.guard=Math.min(cap,t.guard+add)})}
+function enemyGrowth(s){Object.entries(s.territories).forEach(([id,t])=>{if(t.owner==="player")return;const own=territoryCount(s,t.owner),cap=TERRITORY_DEFS[id].final?217:85+own*28,add=Math.max(1,Math.round((1+TERRITORY_DEFS[id].income/18)*(1+own*.25)*diff(s).enemyGrowth));if(t.guard<cap)t.guard=Math.min(cap,t.guard+add)})}
 function enemyAttack(s,rng=Math.random){if(s.month<6||s.month%3!==0||!chance(diff(s).enemyAttack,rng))return null;const targets=ownTerritories(s).filter(id=>id!=="old_street"&&TERRITORY_DEFS[id].neighbors.some(n=>s.territories[n].owner!=="player"));const oldStreetAvailable=owns(s,"old_street")&&TERRITORY_DEFS.old_street.neighbors.some(n=>s.territories[n].owner!=="player");if(!targets.length&&oldStreetAvailable)targets.push("old_street");if(!targets.length)return null;const targetId=pick(targets,rng),enemyNeighbor=TERRITORY_DEFS[targetId].neighbors.map(id=>({id,owner:s.territories[id].owner})).find(x=>x.owner!=="player"),attacker=enemyNeighbor?.owner||"coalition",t=s.territories[targetId],defenders=ownedOfficers(s).filter(o=>!o.injured).sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,2);const attackPower=(35+territoryCount(s,attacker)*12+s.month*.6)*diff(s).battle*(.85+rng()*.3),defPower=effectiveGuard(s,targetId)*1.15+defenders.reduce((a,o)=>a+leaderScore(o),0)+s.morale*.22,held=defPower>=attackPower,losses=drainCrew(s,Math.max(2,Math.round((held?.06:.13)*totalCrew(s))));s.casualties+=losses;change(s,"morale",held?4:-8);change(s,"heat",4);if(held){t.guard=Math.max(12,t.guard-rand(2,6,rng));log(s,"good",`${FACTIONS[attacker].name}反扑${TERRITORY_DEFS[targetId].name}，被留守人马挡了回去。`)}else{t.owner=attacker;t.guard=20;t.stability=58;change(s,"rep",-7);log(s,"bad",`${TERRITORY_DEFS[targetId].name}在反扑中失守。`)}const report={targetId,attacker,held,losses};enqueue({title:held?`反扑被挡在${TERRITORY_DEFS[targetId].name}`:`${TERRITORY_DEFS[targetId].name}失守`,portrait:factionLeaders(s,attacker)[0]?.portrait||"assets/player.webp",body:`<p>${FACTIONS[attacker].name}从外线压向${TERRITORY_DEFS[targetId].name}。${held?"留守头目撑到了援手赶到，对方没能迈过最后一道门。":"驻防连续求援，但人手赶到之前，招牌已经被摘下来。"}</p><p>本次折损 ${losses} 人。</p>`,options:[option(held?"守住了":"这笔账会讨回来","",()=>{})]},"敌对反扑");if(!held&&targetId==="old_street")endGame(s,"lost");return report}
 
 // 血拼进行中不得再花行动点：月度推进已经被挡住了，行动点却还能照花，属于同一个漏洞的另一半。
