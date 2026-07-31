@@ -665,4 +665,28 @@ flow.regroup=20;flow.ap=0;
 game.advanceMonth(flow,true);
 assert.ok(flow.regroup<20,"advanceMonth 必须调用 recoverCrew");
 
+// ---- 人手上限与维护费 ----
+const capped=game.createInitialState("沈满员","yi","standard");
+capped.cash=100;capped.crew=60;
+assert.equal(game.crewCap(capped),60);
+assert.equal(game.applyAction(capped,"recruit_crew"),false,"到上限就招不动了");
+assert.equal(capped.crew,60,"被拒的招募不得改变人手");
+assert.equal(capped.ap,3,"被拒的行动不得扣行动点");
+
+const nearCap=game.createInitialState("沈快满","yi","standard");
+nearCap.cash=100;nearCap.crew=55;
+game.applyAction(nearCap,"recruit_crew");
+assert.equal(game.totalCrew(nearCap),60,"招人不得越过上限");
+
+// 整补和养伤的人也占上限：否则打完仗立刻能招满，池子形同虚设
+const capCounts=game.createInitialState("沈占额","yi","standard");
+capCounts.cash=100;capCounts.crew=10;capCounts.regroup=30;capCounts.wounded=20;
+assert.equal(game.applyAction(capCounts,"recruit_crew"),false,"整补/养伤的人同样占用人手上限");
+
+// 养伤的人也要吃饭
+const up=game.createInitialState("沈养伤开销","yi","standard");
+const upBase=game.monthlyUpkeep(up);
+up.crew=22;up.regroup=10;up.wounded=10;
+assert.equal(game.monthlyUpkeep(up),upBase,"维护费按总人手算，养伤的人不免费");
+
 console.log("structure and core-loop tests passed");
