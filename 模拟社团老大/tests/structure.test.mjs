@@ -707,4 +707,31 @@ const apOrder=game.createInitialState("沈两缺","yi","standard");
 apOrder.crew=9;apOrder.ap=0;
 assert.throws(()=>game.startBattle(apOrder,{targetId:"south_dock",leaderIds:["player"],troops:9,tactic:"steady"}),/not enough crew/);
 
+// ---- 存档迁移 ----
+// 旧存档没有三池字段，载入后必须补齐而不是变成 NaN。
+const legacy=game.createInitialState("沈旧档","yi","standard");
+delete legacy.regroup;delete legacy.wounded;
+const migrated=game.normalizeState(JSON.parse(JSON.stringify(legacy)));
+assert.equal(migrated.regroup,0,"旧存档缺失的整补池补0");
+assert.equal(migrated.wounded,0,"旧存档缺失的养伤池补0");
+assert.equal(migrated.crew,42,"旧存档的 crew 原样视为能战");
+
+// 脏数据不得变成 NaN
+const dirty=game.createInitialState("沈脏档","yi","standard");
+dirty.regroup="abc";dirty.wounded=-5;
+const cleaned=game.normalizeState(JSON.parse(JSON.stringify(dirty)));
+assert.equal(cleaned.regroup,0);
+assert.equal(cleaned.wounded,0);
+
+// 中断的战斗：出战的人已经离池，丢弃会话时必须还回整补池，否则凭空蒸发
+const aborted=game.createInitialState("沈中断","yi","standard");
+aborted.crew=200;
+game.startBattle(aborted,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+assert.equal(aborted.crew,140);
+aborted.battleSession.stage=99;                                    // 制造一个 validBattleSession 会拒绝的会话
+const rescued=game.normalizeState(JSON.parse(JSON.stringify(aborted)));
+assert.equal(rescued.battleSession,null,"损坏的会话必须丢弃");
+assert.equal(rescued.regroup,60,"出战的60人要还进整补池");
+assert.equal(game.totalCrew(rescued),200,"总人手不得因为存档损坏而减少");
+
 console.log("structure and core-loop tests passed");

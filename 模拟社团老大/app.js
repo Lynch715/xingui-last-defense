@@ -452,7 +452,11 @@ function normalizeState(s){if(!s||typeof s!=="object"||s.version!==VERSION||type
   // 否则在危机弹窗开着时刷新，标志会以 true 落盘，checkInsolvency 从此永远直接返回。
   s.flags.debtCrisisQueued=false;
   s.winStreak=Number.isFinite(s.winStreak)?Math.max(0,s.winStreak):0;
-  if(!validBattleSession(s)){if(s.battleSession)log(s,"warn","上一场血拼中断，队伍已经撤回老街。");s.battleSession=null}
+  s.crew=Number.isFinite(s.crew)?Math.max(0,Math.round(s.crew)):0;
+  s.regroup=Number.isFinite(s.regroup)?Math.max(0,Math.round(s.regroup)):0;
+  s.wounded=Number.isFinite(s.wounded)?Math.max(0,Math.round(s.wounded)):0;
+  // 出战的人在 startBattle 就离开了能战池。丢弃损坏的会话时不还人，他们就凭空蒸发了。
+  if(!validBattleSession(s)){if(s.battleSession){s.regroup+=Math.max(0,Math.round(Number(s.battleSession.troops)||0));log(s,"warn","上一场血拼中断，队伍已经撤回老街整补。")}s.battleSession=null}
   return s}
 function loadGame(){if(typeof localStorage==="undefined")return null;try{return normalizeState(JSON.parse(localStorage.getItem(SAVE_KEY)||"null"))}catch{return null}}
 function deleteSave(){if(typeof localStorage!=="undefined")localStorage.removeItem(SAVE_KEY)}
