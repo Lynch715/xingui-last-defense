@@ -78,7 +78,7 @@ assert.equal(sess.stage,1,"开战后停在第1段");
 assert.equal(sess.momentum,0);
 assert.equal(sess.losses,0);
 assert.ok(sess.ratio>0,"ratio 必须在开战时冻结");
-assert.equal(bs.crew,120,"startBattle 本身不扣人");
+assert.equal(bs.crew,60,"出战即扣人：120-60");
 assert.equal(sess.mods.moraleFloor,45,"沈川在阵→士气下限45");
 assert.equal(bs.battleSession,sess);
 assert.deepEqual(sess.leaderIds,["player","zhaokui"],"leaderIds 应按入参顺序保留");
@@ -143,7 +143,7 @@ const r1=game.applyStageChoice(adv,"hold",()=>.5);      // rng=.5 -> u=1.0
 assert.equal(r1.ended,false);
 assert.equal(adv.battleSession.stage,2,"打完一段进入第2段");
 assert.equal(adv.battleSession.momentum,Math.round((advRatio-1)*33.3*10)/10,"势必须等于闭式解，不能只断言变了");
-assert.equal(crewBefore-adv.crew,adv.battleSession.losses,"扣的人必须与记录的伤亡完全相等");
+assert.equal(adv.crew,crewBefore,"段内不再动人手池：人在开战时就离开了，伤亡只记在 session 上");
 assert.equal(adv.casualties,adv.battleSession.losses,"累计伤亡同步");
 assert.ok(adv.battleSession.enemyLoss>0,"敌方也要掉人");
 assert.equal(adv.battleSession.log.length,1,"每段留一条战报");
@@ -155,13 +155,21 @@ fresh.crew=120;
 game.startBattle(fresh,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
 assert.equal(fresh.battleSession.stage,1);
 assert.throws(()=>game.applyStageChoice(fresh,"withdraw",()=>.5),/invalid option/,"第1段不得撤退");
-assert.equal(fresh.crew,120,"被拒的撤退不得扣人");
+assert.equal(fresh.crew,60,"被拒的撤退不得再额外扣人");
 // 非法选项不得留下任何副作用
 const stageOneStage=adv.battleSession.stage;
 const crewAfterThrow=adv.crew;
 assert.throws(()=>game.applyStageChoice(adv,"不存在的选项",()=>.5),/invalid option/);
 assert.equal(adv.crew,crewAfterThrow,"抛错不得扣人");
 assert.equal(adv.battleSession.stage,stageOneStage,"抛错不得推进段数");
+// 伤亡累计封顶在出战人数：否则 finishBattle 算幸存者会得到负数，人手池会凭空膨胀。
+// 自然战斗打不满这个上限（每段约扣 4% 出战人数），所以直接把 losses 顶到临界值来验。
+const capLoss=game.createInitialState("沈封顶","wei","standard");
+capLoss.crew=200;
+game.startBattle(capLoss,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+capLoss.battleSession.losses=59;
+game.applyStageChoice(capLoss,"hold",()=>.5);
+assert.ok(capLoss.battleSession.losses<=60,`伤亡 ${capLoss.battleSession.losses} 不得超过出战的 60 人`);
 // rng=0 -> u=0.705，走劣势分支，覆盖 .25 档与"对面顶住了"文案。
 // 兵力必须真的处于劣势：200人打驻防46是碾压，ratio≈2.5，再差的骰子也翻不出负势。
 const bad=game.createInitialState("沈劣势","yi","standard");
@@ -351,13 +359,12 @@ game.applyStageChoice(talk,"hold",tr);
 assert.ok(talk.battleSession.momentum>20,"这局必须打出优势，否则劝降不会出现");
 assert.ok(game.stageOptions(talk,talk.battleSession).some(o=>o.id==="parley"));
 const parleyRate=game.stageOptions(talk,talk.battleSession).find(o=>o.id==="parley").convert;
-const crewBeforeStage3=talk.crew,lossBeforeStage3=talk.battleSession.losses;
+const crewBeforeStage3=talk.crew;
 game.applyStageChoice(talk,"parley",tr);
 assert.equal(talk.lastBattle.outcome,"win");
-const stage3Loss=talk.lastBattle.losses-lossBeforeStage3;
 const gain=Math.round(talk.lastBattle.enemyLoss*parleyRate);
 assert.ok(gain>0,"转化人数必须大于0，否则这条断言没有意义");
-assert.equal(talk.crew,crewBeforeStage3-stage3Loss+gain,"最终人手 = 战前 - 本段伤亡 + 转化所得");
+assert.equal(talk.crew,crewBeforeStage3+gain,"劝降转化的人直接进能战池；段内伤亡不再从池子扣");
 assert.ok(talk.log.some(l=>l.text.includes("程野把")),"转化要留下江湖记事");
 // 对照组：同样局势下选 hold 则不该有任何转化
 const noTalk=game.createInitialState("沈不劝","yi","standard");
@@ -366,9 +373,9 @@ const nr=()=>.99;
 game.startBattle(noTalk,{targetId:"south_dock",leaderIds:["player","chengye"],troops:200,tactic:"steady"},nr);
 game.applyStageChoice(noTalk,"hold",nr);
 game.applyStageChoice(noTalk,"hold",nr);
-const noCrewBefore=noTalk.crew,noLossBefore=noTalk.battleSession.losses;
+const noCrewBefore=noTalk.crew;
 game.applyStageChoice(noTalk,"hold",nr);
-assert.equal(noTalk.crew,noCrewBefore-(noTalk.lastBattle.losses-noLossBefore),"没劝降就不该有人加入");
+assert.equal(noTalk.crew,noCrewBefore,"没劝降就不该有人加入，且段内伤亡不动人手池");
 // 阿七断后：成长更快
 const rear=joinNamed(game.createInitialState("沈断后","yi","standard"),"aqi");
 rear.crew=200;

@@ -210,6 +210,7 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   if(ids.includes("player"))mods.moraleFloor=45;                                  // 沈川「沈家之后」
   if(ids.includes("yerong"))mods.retreatShield=true;                              // 叶蓉在阵：撤退不掉士气（经营首次参战）
   if(ids.includes("xiejiu")&&(s.winStreak||0)>=2)mods.multRest*=1.05;             // 谢九「只服胜者」
+  s.crew-=troops;                                                                 // 人立刻离开能战池，直到 finishBattle 才分流回整补/养伤
   s.battleSession={targetId,leaderIds:ids,troops,tactic,stage:1,momentum:0,ratio:est.ratio,losses:0,enemyLoss:0,outcome:"",mods,log:[]};
   return s.battleSession;
 }
@@ -296,9 +297,9 @@ function applyStageChoice(s,optionId,rng=Math.random){
   session.momentum=Math.round((session.momentum+delta)*10)/10;
   if(opt.id==="duel")extra=resolveDuel(s,session,rng);                     // multRest 名为「剩余段」：单挑结果只能影响后续段，不能抬高本段
   const stageWon=delta>=0,ahead=session.momentum>=0;                       // stageWon=本段打赢没有；ahead=累计是否领先
-  const loss=stageLoss(s,session,ahead,(opt.casualtyMult??1),rng);         // 伤亡按累计局势定档，避免优势方被单段波动多收血
+  const loss=Math.min(stageLoss(s,session,ahead,(opt.casualtyMult??1),rng),session.troops-session.losses);  // 伤亡按累计局势定档；封顶在出战人数，否则幸存者会算成负数
   const told=session.stage===3?ahead:stageWon;                             // 决胜段的叙述必须与最终胜负一致
-  session.losses+=loss;s.crew=Math.max(1,s.crew-loss);s.casualties+=loss;
+  session.losses+=loss;s.casualties+=loss;                                 // 人已不在池子里，这里只记账
   session.enemyLoss+=Math.max(2,Math.round(s.territories[session.targetId].guard*(ahead?.15:.06)*(.85+rng()*.35)));
   session.log.push({name,text:stageText(s,session,opt,told,loss)+(extra?" "+extra:"")});
   session.stage++;
