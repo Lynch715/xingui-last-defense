@@ -766,3 +766,31 @@ assert.equal(defector.side,"defected","这个局面下必须叛离");
 assert.equal(game.totalCrew(defect),beforeDefect-8,"叛离带走的8人必须真的从总人手里消失");
 
 console.log("structure and core-loop tests passed");
+
+// ---- Part 2/3 字段的存档迁移 ----
+const legacy2=game.createInitialState("沈老档二","yi","standard");
+delete legacy2.factions.east.ambition;
+legacy2.factions.wan.ambition="x";
+legacy2.factions.long.ambition=-3;
+delete legacy2.territories.south_dock.settling;
+legacy2.territories.golden_bay.settling=99;
+const mig2=game.normalizeState(JSON.parse(JSON.stringify(legacy2)));
+assert.equal(mig2.factions.east.ambition,0,"缺失的 ambition 补0");
+assert.equal(mig2.factions.wan.ambition,0,"非数字的 ambition 补0");
+assert.equal(mig2.factions.long.ambition,0,"负数 ambition 夹到0");
+assert.equal(mig2.territories.south_dock.settling,0,"缺失的 settling 补0");
+assert.equal(mig2.territories.golden_bay.settling,3,"超范围的 settling 夹到3");
+
+// ---- 驻防期 ----
+const settleT=game.createInitialState("沈未稳","yi","standard");
+settleT.territories.south_dock.owner="player";settleT.territories.south_dock.settling=3;
+const grossSettling=game.monthlyGross(settleT);
+settleT.territories.south_dock.settling=0;
+assert.ok(game.monthlyGross(settleT)>grossSettling,"驻防期内收入必须减半");
+settleT.territories.south_dock.settling=2;
+assert.equal(game.effectiveGuard(settleT,"south_dock"),settleT.territories.south_dock.guard*.7,"驻防期被进攻时只算七成");
+const tickT=game.createInitialState("沈递减","yi","standard");
+tickT.territories.old_street.settling=2;
+game.tickSettling(tickT,()=>.9);                        // rng=.9 → 不触发街面不服
+assert.equal(tickT.territories.old_street.settling,1,"每月递减1");
+assert.equal(game.settlingTerritories(tickT).length,1);
