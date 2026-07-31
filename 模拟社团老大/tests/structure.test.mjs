@@ -11,6 +11,10 @@ assert.equal(Object.keys(s.territories).length,8);
 assert.deepEqual(new Set(game.attackableTerritories(s)),new Set(["south_dock","golden_bay","west_market"]));
 assert.equal(s.ap,3);
 assert.equal(s.crew,42);
+assert.equal(s.regroup,0,"开局没有整补中的人");
+assert.equal(s.wounded,0,"开局没有伤员");
+assert.equal(game.totalCrew(s),42,"总人手=能战+整补+养伤");
+assert.equal(game.crewCap(s),60,"开局只有老街一块地：40+1*20+0");
 assert.ok(game.monthlyGross(s)>game.monthlyUpkeep(s),"开局不应当立即入不敷出");
 assert.equal(game.officerCapacity(s),7);
 
