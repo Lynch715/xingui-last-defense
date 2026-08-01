@@ -11,6 +11,10 @@ assert.equal(Object.keys(s.territories).length,8);
 assert.deepEqual(new Set(game.attackableTerritories(s)),new Set(["south_dock","golden_bay","west_market"]));
 assert.equal(s.ap,3);
 assert.equal(s.crew,42);
+assert.equal(s.regroup,0,"开局没有整补中的人");
+assert.equal(s.wounded,0,"开局没有伤员");
+assert.equal(game.totalCrew(s),42,"总人手=能战+整补+养伤");
+assert.equal(game.crewCap(s),60,"开局只有老街一块地：40+1*20+0");
 assert.ok(game.monthlyGross(s)>game.monthlyUpkeep(s),"开局不应当立即入不敷出");
 assert.equal(game.officerCapacity(s),7);
 
@@ -74,7 +78,7 @@ assert.equal(sess.stage,1,"开战后停在第1段");
 assert.equal(sess.momentum,0);
 assert.equal(sess.losses,0);
 assert.ok(sess.ratio>0,"ratio 必须在开战时冻结");
-assert.equal(bs.crew,120,"startBattle 本身不扣人");
+assert.equal(bs.crew,60,"出战即扣人：120-60");
 assert.equal(sess.mods.moraleFloor,45,"沈川在阵→士气下限45");
 assert.equal(bs.battleSession,sess);
 assert.deepEqual(sess.leaderIds,["player","zhaokui"],"leaderIds 应按入参顺序保留");
@@ -139,7 +143,7 @@ const r1=game.applyStageChoice(adv,"hold",()=>.5);      // rng=.5 -> u=1.0
 assert.equal(r1.ended,false);
 assert.equal(adv.battleSession.stage,2,"打完一段进入第2段");
 assert.equal(adv.battleSession.momentum,Math.round((advRatio-1)*33.3*10)/10,"势必须等于闭式解，不能只断言变了");
-assert.equal(crewBefore-adv.crew,adv.battleSession.losses,"扣的人必须与记录的伤亡完全相等");
+assert.equal(adv.crew,crewBefore,"段内不再动人手池：人在开战时就离开了，伤亡只记在 session 上");
 assert.equal(adv.casualties,adv.battleSession.losses,"累计伤亡同步");
 assert.ok(adv.battleSession.enemyLoss>0,"敌方也要掉人");
 assert.equal(adv.battleSession.log.length,1,"每段留一条战报");
@@ -151,15 +155,23 @@ fresh.crew=120;
 game.startBattle(fresh,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
 assert.equal(fresh.battleSession.stage,1);
 assert.throws(()=>game.applyStageChoice(fresh,"withdraw",()=>.5),/invalid option/,"第1段不得撤退");
-assert.equal(fresh.crew,120,"被拒的撤退不得扣人");
+assert.equal(fresh.crew,60,"被拒的撤退不得再额外扣人");
 // 非法选项不得留下任何副作用
 const stageOneStage=adv.battleSession.stage;
 const crewAfterThrow=adv.crew;
 assert.throws(()=>game.applyStageChoice(adv,"不存在的选项",()=>.5),/invalid option/);
 assert.equal(adv.crew,crewAfterThrow,"抛错不得扣人");
 assert.equal(adv.battleSession.stage,stageOneStage,"抛错不得推进段数");
+// 伤亡累计封顶在出战人数：否则 finishBattle 算幸存者会得到负数，人手池会凭空膨胀。
+// 自然战斗打不满这个上限（每段约扣 4% 出战人数），所以直接把 losses 顶到临界值来验。
+const capLoss=game.createInitialState("沈封顶","wei","standard");
+capLoss.crew=200;
+game.startBattle(capLoss,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+capLoss.battleSession.losses=59;
+game.applyStageChoice(capLoss,"hold",()=>.5);
+assert.ok(capLoss.battleSession.losses<=60,`伤亡 ${capLoss.battleSession.losses} 不得超过出战的 60 人`);
 // rng=0 -> u=0.705，走劣势分支，覆盖 .25 档与"对面顶住了"文案。
-// 兵力必须真的处于劣势：200人打驻防46是碾压，ratio≈2.5，再差的骰子也翻不出负势。
+// 兵力必须真的处于劣势：30人打驻防68，ratio<1，再好的骰子也翻不出正势。
 const bad=game.createInitialState("沈劣势","yi","standard");
 bad.crew=300;
 const badSess=game.startBattle(bad,{targetId:"south_dock",leaderIds:["player"],troops:30,tactic:"steady"});
@@ -347,13 +359,12 @@ game.applyStageChoice(talk,"hold",tr);
 assert.ok(talk.battleSession.momentum>20,"这局必须打出优势，否则劝降不会出现");
 assert.ok(game.stageOptions(talk,talk.battleSession).some(o=>o.id==="parley"));
 const parleyRate=game.stageOptions(talk,talk.battleSession).find(o=>o.id==="parley").convert;
-const crewBeforeStage3=talk.crew,lossBeforeStage3=talk.battleSession.losses;
+const crewBeforeStage3=talk.crew;
 game.applyStageChoice(talk,"parley",tr);
 assert.equal(talk.lastBattle.outcome,"win");
-const stage3Loss=talk.lastBattle.losses-lossBeforeStage3;
 const gain=Math.round(talk.lastBattle.enemyLoss*parleyRate);
 assert.ok(gain>0,"转化人数必须大于0，否则这条断言没有意义");
-assert.equal(talk.crew,crewBeforeStage3-stage3Loss+gain,"最终人手 = 战前 - 本段伤亡 + 转化所得");
+assert.equal(talk.crew,crewBeforeStage3+gain,"劝降转化的人直接进能战池；段内伤亡不再从池子扣");
 assert.ok(talk.log.some(l=>l.text.includes("程野把")),"转化要留下江湖记事");
 // 对照组：同样局势下选 hold 则不该有任何转化
 const noTalk=game.createInitialState("沈不劝","yi","standard");
@@ -362,9 +373,9 @@ const nr=()=>.99;
 game.startBattle(noTalk,{targetId:"south_dock",leaderIds:["player","chengye"],troops:200,tactic:"steady"},nr);
 game.applyStageChoice(noTalk,"hold",nr);
 game.applyStageChoice(noTalk,"hold",nr);
-const noCrewBefore=noTalk.crew,noLossBefore=noTalk.battleSession.losses;
+const noCrewBefore=noTalk.crew;
 game.applyStageChoice(noTalk,"hold",nr);
-assert.equal(noTalk.crew,noCrewBefore-(noTalk.lastBattle.losses-noLossBefore),"没劝降就不该有人加入");
+assert.equal(noTalk.crew,noCrewBefore,"没劝降就不该有人加入，且段内伤亡不动人手池");
 // 阿七断后：成长更快
 const rear=joinNamed(game.createInitialState("沈断后","yi","standard"),"aqi");
 rear.crew=200;
@@ -587,4 +598,199 @@ function parleyStability(useParley){
 assert.equal(parleyStability(false),62,"强攻拿下：义字当头的基础稳定度 62");
 assert.equal(parleyStability(true),52,"劝降拿下：收编来的人压不住街面，稳定度 -10");
 
+// ---- 战后人手分流 ----
+// 出战的人在 startBattle 离池，finishBattle 必须把他们分成幸存(整补)/重伤(养伤)/阵亡(消失)三份。
+const settle=game.createInitialState("沈结算","yi","standard");
+settle.crew=120;
+game.resolveBattle(settle,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"},seeded(7));
+const settleRep=settle.lastBattle;
+const settleWounded=Math.round(settleRep.losses*.55);
+assert.ok(settleRep.losses>0,"这场仗必须真的死人，否则断言无意义");
+assert.equal(settle.crew,60,"出战的60人不得直接回到能战池");
+assert.equal(settle.regroup,60-settleRep.losses,"幸存者全部进整补");
+assert.equal(settle.wounded,settleWounded,"伤亡的55%进养伤");
+assert.equal(game.totalCrew(settle),120-(settleRep.losses-settleWounded),"总人手只少了阵亡的那部分");
+
+// 撤退与战败走同一条分流路径，不能只在胜利分支里结算。
+const settleRetreat=game.createInitialState("沈撤退结算","yi","standard");
+settleRetreat.crew=120;
+game.startBattle(settleRetreat,{targetId:"south_dock",leaderIds:["player","sumanqing"],troops:60,tactic:"steady"});
+game.applyStageChoice(settleRetreat,"hold",seeded(11));
+game.applyStageChoice(settleRetreat,"withdraw",seeded(11));
+assert.equal(settleRetreat.battleSession,null,"撤退后会话必须结束");
+assert.equal(settleRetreat.regroup+settleRetreat.wounded>0,true,"撤退回来的人也要进整补/养伤，不能凭空消失");
+assert.equal(settleRetreat.crew,60,"撤退不把人直接还回能战池");
+
+// ---- 每月回流 ----
+const rec=game.createInitialState("沈回流","yi","standard");
+rec.crew=0;rec.regroup=48;rec.wounded=10;rec.cash=100;
+const recOut=game.recoverCrew(rec);
+assert.equal(recOut.back,24,"整补每月回一半：ceil(48*0.5)");
+assert.equal(rec.regroup,24);
+assert.equal(recOut.healed,3,"养伤每月回 ceil(10*0.22)=3");
+assert.equal(recOut.cost,4,"医药费 = 伤员数 * 0.4");
+assert.equal(rec.cash,96,"医药费从现金里扣");
+assert.equal(rec.wounded,7);
+assert.equal(rec.crew,27,"24 整补归队 + 3 伤愈");
+
+// 付不出药钱：回归减半、掉士气、且不扣钱（钱本来就不够）
+const broke=game.createInitialState("沈没钱养伤","yi","standard");
+broke.crew=0;broke.regroup=0;broke.wounded=10;broke.cash=1;
+const brokeMorale=broke.morale;
+const brokeOut=game.recoverCrew(broke);
+assert.equal(brokeOut.broke,true);
+assert.equal(brokeOut.healed,1,"付不起时回归减半：floor(3/2)");
+assert.equal(brokeOut.cost,0,"付不起就不扣钱");
+assert.equal(broke.cash,1);
+assert.equal(broke.morale,brokeMorale-4);
+
+// 尾数：整补只剩 3 人时，不能因为"至少回 5 人"而回出负数
+const tail=game.createInitialState("沈收尾","yi","standard");
+tail.crew=0;tail.regroup=3;tail.wounded=0;
+assert.equal(game.recoverCrew(tail).back,3,"整补余数不足5人时一次归队完毕");
+assert.equal(tail.regroup,0);
+assert.equal(tail.crew,3);
+
+// 空池不得产生任何副作用
+const idle=game.createInitialState("沈无伤","yi","standard");
+const idleCash=idle.cash,idleCrew=idle.crew;
+const idleOut=game.recoverCrew(idle);
+assert.deepEqual([idleOut.back,idleOut.healed,idleOut.cost],[0,0,0]);
+assert.equal(idle.cash,idleCash);
+assert.equal(idle.crew,idleCrew);
+
+// 推进月份必须触发回流
+const flow=game.createInitialState("沈过月","yi","standard");
+flow.regroup=20;flow.ap=0;
+game.advanceMonth(flow,true);
+assert.ok(flow.regroup<20,"advanceMonth 必须调用 recoverCrew");
+
+// ---- 人手上限与维护费 ----
+const capped=game.createInitialState("沈满员","yi","standard");
+capped.cash=100;capped.crew=60;
+assert.equal(game.crewCap(capped),60);
+assert.equal(game.applyAction(capped,"recruit_crew"),false,"到上限就招不动了");
+assert.equal(capped.crew,60,"被拒的招募不得改变人手");
+assert.equal(capped.ap,3,"被拒的行动不得扣行动点");
+
+const nearCap=game.createInitialState("沈快满","yi","standard");
+nearCap.cash=100;nearCap.crew=55;
+game.applyAction(nearCap,"recruit_crew");
+assert.equal(game.totalCrew(nearCap),60,"招人不得越过上限");
+
+// 整补和养伤的人也占上限：否则打完仗立刻能招满，池子形同虚设
+const capCounts=game.createInitialState("沈占额","yi","standard");
+capCounts.cash=100;capCounts.crew=10;capCounts.regroup=30;capCounts.wounded=20;
+assert.equal(game.applyAction(capCounts,"recruit_crew"),false,"整补/养伤的人同样占用人手上限");
+
+// 养伤的人也要吃饭
+const up=game.createInitialState("沈养伤开销","yi","standard");
+const upBase=game.monthlyUpkeep(up);
+up.crew=22;up.regroup=10;up.wounded=10;
+assert.equal(game.monthlyUpkeep(up),upBase,"维护费按总人手算，养伤的人不免费");
+
+// ---- 血拼消耗行动点 ----
+// 这是"5分钟通关"的根因之一：过去发起进攻零成本，一个月可以打无限场。
+const apCost=game.createInitialState("沈行动点","yi","standard");
+apCost.crew=200;
+game.startBattle(apCost,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+assert.equal(apCost.ap,2,"开战消耗1个行动点");
+while(apCost.battleSession)game.applyStageChoice(apCost,"hold",seeded(3));
+
+const apBroke=game.createInitialState("沈没点数","yi","standard");
+apBroke.crew=200;apBroke.ap=0;
+assert.throws(()=>game.startBattle(apBroke,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"}),/no action point/);
+assert.equal(apBroke.crew,200,"被拒的开战不得扣人手");
+
+// 错误优先级：人手不足要先于行动点不足报出来，界面提示才对得上
+const apOrder=game.createInitialState("沈两缺","yi","standard");
+apOrder.crew=9;apOrder.ap=0;
+assert.throws(()=>game.startBattle(apOrder,{targetId:"south_dock",leaderIds:["player"],troops:9,tactic:"steady"}),/not enough crew/);
+
+// ---- 存档迁移 ----
+// 旧存档没有三池字段，载入后必须补齐而不是变成 NaN。
+const legacy=game.createInitialState("沈旧档","yi","standard");
+delete legacy.regroup;delete legacy.wounded;
+const migrated=game.normalizeState(JSON.parse(JSON.stringify(legacy)));
+assert.equal(migrated.regroup,0,"旧存档缺失的整补池补0");
+assert.equal(migrated.wounded,0,"旧存档缺失的养伤池补0");
+assert.equal(migrated.crew,42,"旧存档的 crew 原样视为能战");
+
+// 脏数据不得变成 NaN
+const dirty=game.createInitialState("沈脏档","yi","standard");
+dirty.regroup="abc";dirty.wounded=-5;
+const cleaned=game.normalizeState(JSON.parse(JSON.stringify(dirty)));
+assert.equal(cleaned.regroup,0);
+assert.equal(cleaned.wounded,0);
+
+// 中断的战斗：出战的人已经离池，丢弃会话时必须还回整补池，否则凭空蒸发
+const aborted=game.createInitialState("沈中断","yi","standard");
+aborted.crew=200;
+game.startBattle(aborted,{targetId:"south_dock",leaderIds:["player"],troops:60,tactic:"steady"});
+assert.equal(aborted.crew,140);
+aborted.battleSession.stage=99;                                    // 制造一个 validBattleSession 会拒绝的会话
+const rescued=game.normalizeState(JSON.parse(JSON.stringify(aborted)));
+assert.equal(rescued.battleSession,null,"损坏的会话必须丢弃");
+assert.equal(rescued.regroup,60,"出战的60人要还进整补池");
+assert.equal(game.totalCrew(rescued),200,"总人手不得因为存档损坏而减少");
+
+
+// ---- 三池化之后的连带修正：任何"从组织里扣人"的地方都不能只盯着能战池 ----
+// 打完一仗 s.crew 常常是 0（人都在整补），旧写法 Math.max(1,s.crew-n) 会在这种局面下凭空造人。
+const drainEmpty=game.createInitialState("沈空池","yi","standard");
+drainEmpty.crew=0;drainEmpty.regroup=80;drainEmpty.wounded=0;
+assert.equal(game.drainCrew(drainEmpty,8),8,"能战池空时要从整补池里扣");
+assert.equal(drainEmpty.crew,0);
+assert.equal(drainEmpty.regroup,72);
+assert.equal(game.totalCrew(drainEmpty),72,"总人手必须真的减少 8");
+
+const drainOrder=game.createInitialState("沈顺序","yi","standard");
+drainOrder.crew=3;drainOrder.regroup=4;drainOrder.wounded=10;
+assert.equal(game.drainCrew(drainOrder,9),9,"按 能战→整补→养伤 的顺序扣");
+assert.deepEqual([drainOrder.crew,drainOrder.regroup,drainOrder.wounded],[0,0,8]);
+
+const drainOver=game.createInitialState("沈扣光","yi","standard");
+drainOver.crew=2;drainOver.regroup=0;drainOver.wounded=1;
+assert.equal(game.drainCrew(drainOver,50),3,"人不够时只扣得到实际人数，不得扣成负数");
+assert.equal(game.totalCrew(drainOver),0);
+assert.ok(drainOver.crew>=0&&drainOver.regroup>=0&&drainOver.wounded>=0,"三池都不得为负");
+
+// 头目叛离：带走的人要从整个组织算，且不得凭空造人
+const defect=game.createInitialState("沈叛离","yi","standard");
+defect.crew=0;defect.regroup=80;
+const defector=defect.officers.find(o=>o.id==="zhaokui");
+defector.resentment=90;defector.loyalty=20;
+const beforeDefect=game.totalCrew(defect);
+game.officerTension(defect,()=>0);                       // rng=0 → chance(.2) 必定触发
+assert.equal(defector.side,"defected","这个局面下必须叛离");
+assert.equal(game.totalCrew(defect),beforeDefect-8,"叛离带走的8人必须真的从总人手里消失");
+
 console.log("structure and core-loop tests passed");
+
+// ---- Part 2/3 字段的存档迁移 ----
+const legacy2=game.createInitialState("沈老档二","yi","standard");
+delete legacy2.factions.east.ambition;
+legacy2.factions.wan.ambition="x";
+legacy2.factions.long.ambition=-3;
+delete legacy2.territories.south_dock.settling;
+legacy2.territories.golden_bay.settling=99;
+const mig2=game.normalizeState(JSON.parse(JSON.stringify(legacy2)));
+assert.equal(mig2.factions.east.ambition,0,"缺失的 ambition 补0");
+assert.equal(mig2.factions.wan.ambition,0,"非数字的 ambition 补0");
+assert.equal(mig2.factions.long.ambition,0,"负数 ambition 夹到0");
+assert.equal(mig2.territories.south_dock.settling,0,"缺失的 settling 补0");
+assert.equal(mig2.territories.golden_bay.settling,3,"超范围的 settling 夹到3");
+
+// ---- 驻防期 ----
+const settleT=game.createInitialState("沈未稳","yi","standard");
+settleT.territories.south_dock.owner="player";settleT.territories.south_dock.settling=3;
+const grossSettling=game.monthlyGross(settleT);
+settleT.territories.south_dock.settling=0;
+assert.ok(game.monthlyGross(settleT)>grossSettling,"驻防期内收入必须减半");
+settleT.territories.south_dock.settling=2;
+assert.equal(game.effectiveGuard(settleT,"south_dock"),settleT.territories.south_dock.guard*.7,"驻防期被进攻时只算七成");
+const tickT=game.createInitialState("沈递减","yi","standard");
+tickT.territories.old_street.settling=2;
+game.tickSettling(tickT,()=>.9);                        // rng=.9 → 不触发街面不服
+assert.equal(tickT.territories.old_street.settling,1,"每月递减1");
+assert.equal(game.settlingTerritories(tickT).length,1);

@@ -43,14 +43,14 @@ const CHARACTER_DEFS={
 };
 
 const TERRITORY_DEFS={
-  old_street:{name:"旧城老街",owner:"player",income:8,guard:24,bonus:"每次招募额外+2人",neighbors:["south_dock","golden_bay","west_market"]},
-  south_dock:{name:"南港码头",owner:"east",income:13,guard:46,bonus:"每月人手维护成本-10%",neighbors:["old_street","shipyard","central_harbor"]},
-  shipyard:{name:"红星船厂",owner:"east",income:11,guard:53,bonus:"血拼伤亡-8%",neighbors:["south_dock","central_harbor"]},
-  golden_bay:{name:"金湾娱乐区",owner:"wan",income:19,guard:43,bonus:"收入高，每月外部压力+2",neighbors:["old_street","new_city","central_harbor"]},
-  new_city:{name:"东部新城",owner:"wan",income:16,guard:56,bonus:"高级人才出现率提升",neighbors:["golden_bay","central_harbor"]},
-  west_market:{name:"西关批发市场",owner:"long",income:12,guard:40,bonus:"地盘投资价格-15%",neighbors:["old_street","north_yard","central_harbor"]},
-  north_yard:{name:"北站货场",owner:"long",income:14,guard:48,bonus:"战败撤退时伤亡-12%",neighbors:["west_market","central_harbor"]},
-  central_harbor:{name:"中央港区",owner:"coalition",income:28,guard:82,bonus:"控制后即可号令雾港",neighbors:["south_dock","shipyard","golden_bay","new_city","west_market","north_yard"],final:true}
+  old_street:{name:"旧城老街",owner:"player",income:8,guard:44,bonus:"每次招募额外+2人",neighbors:["south_dock","golden_bay","west_market"]},
+  south_dock:{name:"南港码头",owner:"east",income:13,guard:105,bonus:"每月人手维护成本-10%",neighbors:["old_street","shipyard","central_harbor","west_market"]},
+  shipyard:{name:"红星船厂",owner:"east",income:11,guard:121,bonus:"血拼伤亡-8%",neighbors:["south_dock","central_harbor","new_city"]},
+  golden_bay:{name:"金湾娱乐区",owner:"wan",income:19,guard:99,bonus:"收入高，每月外部压力+2",neighbors:["old_street","new_city","central_harbor"]},
+  new_city:{name:"东部新城",owner:"wan",income:16,guard:127,bonus:"高级人才出现率提升",neighbors:["golden_bay","central_harbor","shipyard","north_yard"]},
+  west_market:{name:"西关批发市场",owner:"long",income:12,guard:93,bonus:"地盘投资价格-15%",neighbors:["old_street","north_yard","central_harbor","south_dock"]},
+  north_yard:{name:"北站货场",owner:"long",income:14,guard:108,bonus:"战败撤退时伤亡-12%",neighbors:["west_market","central_harbor","new_city"]},
+  central_harbor:{name:"中央港区",owner:"coalition",income:28,guard:186,bonus:"控制后即可号令雾港",neighbors:["south_dock","shipyard","golden_bay","new_city","west_market","north_yard"],final:true}
 };
 
 const PROLOGUE=[
@@ -60,11 +60,15 @@ const PROLOGUE=[
 ];
 
 const ACTIONS=[
-  {id:"recruit_crew",icon:"众",name:"去老街招人",desc:"让程野在球场、码头和老街间找肯跟你的人。",effects:["人手↑↑","现金-5万"],max:2,canRun:s=>s.cash>=recruitCost(s,5),lockedText:"现金不足",run:s=>{const bonus=owns(s,"old_street")?2:0,mult=hasOfficer(s,"chengye")?1.25:1,gain=Math.round((rand(7,12)+bonus)*mult);s.crew+=gain;addCash(s,-recruitCost(s,5));change(s,"morale",2);log(s,"good",`程野带回了 ${gain} 名新人。`)}},
+  {id:"recruit_crew",icon:"众",name:"去老街招人",desc:"让程野在球场、码头和老街间找肯跟你的人。",effects:["人手↑↑","现金-5万"],max:2,canRun:s=>s.cash>=recruitCost(s,5)&&totalCrew(s)<crewCap(s),lockedText:s=>totalCrew(s)>=crewCap(s)?"老街养不下更多人了":"现金不足",run:s=>{const bonus=owns(s,"old_street")?2:0,mult=hasOfficer(s,"chengye")?1.25:1,gain=Math.min(Math.round((rand(7,12)+bonus)*mult),Math.max(0,crewCap(s)-totalCrew(s)));s.crew+=gain;addCash(s,-recruitCost(s,5));change(s,"morale",2);log(s,"good",`程野带回了 ${gain} 名新人。`)}},
   {id:"train",icon:"练",name:"整队合练",desc:"把新老人手混在一起，练到听得懂同一句指令。",effects:["士气↑↑","下场血拼↑"],max:2,run:s=>{change(s,"morale",9);s.training=clamp((s.training||0)+8,0,30);s.officers.filter(o=>o.side==="player"&&!o.injured).forEach(o=>{o.loyalty=clamp(o.loyalty+1);o.exp=(o.exp||0)+1});log(s,"good","赵魁把队伍从老街头拉到了尾。")}},
   {id:"business",icon:"账",name:"盘活地盘生意",desc:"让苏曼青提前收回一部分现金，但动静大了会引人注意。",effects:["现金↑↑","压力↑"],max:1,run:s=>{const gain=Math.max(8,Math.round(monthlyGross(s)*.55));addCash(s,gain);change(s,"heat",5);log(s,"good",`账面提前回了 ${gain} 万。`)}},
   {id:"intel",icon:"眼",name:"打听敌情",desc:"查清一块相邻地盘的真实驻防，为奇袭和劝降做准备。",effects:["情报↑","谋略人物受益"],max:1,run:s=>{const targets=attackableTerritories(s).filter(id=>!s.intel[id]);if(targets.length){const id=pick(targets);s.intel[id]=true;log(s,"good",`已摸清${TERRITORY_DEFS[id].name}的驻防和主将。`)}else{change(s,"heat",-4);log(s,"story","魏小楼的路子暂时没有新消息。")}}},
   {id:"visit",icon:"茶",name:"找头目谈话",desc:"功劳、位置和没兑现的话，很多时候得关起门来说。",effects:["最低忠诚↑","怨气↓"],max:1,run:s=>{const o=ownedOfficers(s).filter(x=>x.id!=="player").sort((a,b)=>a.loyalty-b.loyalty)[0];if(o){o.loyalty=clamp(o.loyalty+9);o.resentment=clamp(o.resentment-7);log(s,"story",`你和${o.name}在祖堂里谈了很久。`)}else change(s,"morale",3)}},
+  {id:"tend_wounded",icon:"药",name:"安顿伤员",desc:"请郎中、发抚恤，让躺在诊所里的人早点站起来。",effects:["伤员多回一批","士气↑"],max:1,canRun:s=>s.wounded>0&&s.cash>=woundedCareCost(s),lockedText:s=>s.wounded<=0?"眼下没有伤员":"现金不足",run:s=>{const extra=Math.min(s.wounded,Math.max(1,Math.ceil(s.wounded*.22)));addCash(s,-woundedCareCost(s));s.wounded-=extra;s.crew+=extra;change(s,"morale",3);log(s,"good",`郎中和被褥进了伤号房，${extra} 个人提前归队。`)}},
+  // 自动挑最薄弱的一块地：省掉一层选地界面，而"该加固哪里"本来也只有一个正确答案。
+  {id:"fortify",icon:"守",name:"加固驻防",desc:"把一批人手常驻在最薄弱的地盘上，砌墙、看门、守夜。",effects:["该地驻防+15","能战-12"],max:1,canRun:s=>s.crew>=12&&ownTerritories(s).length>0,lockedText:s=>"能战人手不足12人",run:s=>{const id=weakestOwned(s);s.crew-=12;s.territories[id].guard+=15;change(s,"support",2);log(s,"good",`12 个人留在了${TERRITORY_DEFS[id].name}，驻防加厚到 ${s.territories[id].guard}。`)}},
+  {id:"garrison",icon:"镇",name:"坐镇新地盘",desc:"派一名头目住进刚打下来的地方，把街面压服。",effects:["驻防期立即结束"],max:1,canRun:s=>settlingTerritories(s).length>0&&ownedOfficers(s).some(o=>o.id!=="player"&&!o.injured),lockedText:s=>settlingTerritories(s).length?"没有能派去的头目":"没有未稳的地盘",run:s=>{const id=settlingTerritories(s).sort((a,b)=>s.territories[b].settling-s.territories[a].settling)[0],o=ownedOfficers(s).filter(x=>x.id!=="player"&&!x.injured).sort((a,b)=>b.stats.charm-a.stats.charm)[0];s.territories[id].settling=0;s.territories[id].stability=clamp(s.territories[id].stability+12);o.merit+=3;log(s,"good",`${o.name}住进了${TERRITORY_DEFS[id].name}，街面开始服气。`)}},
   {id:"laylow",icon:"静",name:"低调一个月",desc:"收起外面的动静，帮街坊解决几件实际的事。",effects:["压力↓↓","人心↑"],max:1,run:s=>{change(s,"heat",-13);change(s,"support",5);change(s,"morale",2);log(s,"story","这个月没有人在老街听见太大的动静。")}}
 ];
 
@@ -129,12 +133,18 @@ function createInitialState(name="沈川",creed="yi",difficulty="standard"){
   const officers=[cloneOfficer("player","player",100),cloneOfficer("zhaokui","player",64),cloneOfficer("sumanqing","player",72),cloneOfficer("chengye","player",78),cloneOfficer("hewanshan","east",100),cloneOfficer("tangji","east",82),cloneOfficer("fangjingyao","wan",100),cloneOfficer("hanbiao","wan",79),cloneOfficer("guchangfeng","long",100),cloneOfficer("weixiaolou","long",76)];
   officers[0].name=(name||"沈川").trim().slice(0,8)||"沈川";
   if(creed==="yi"){officers.slice(1,4).forEach(o=>o.loyalty+=5)}
-  const territories={};Object.entries(TERRITORY_DEFS).forEach(([id,t])=>territories[id]={owner:t.owner,guard:t.guard,level:1,stability:t.owner==="player"?72:82});
-  const s={version:VERSION,runId:`fog_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,name:officers[0].name,creed:CREEDS[creed]?creed:"yi",difficulty:DIFFICULTIES[difficulty]?difficulty:"standard",month:0,ap:3,tab:"hall",cash:36,crew:42,morale:62,rep:18,support:55,heat:8,training:0,insolvencyMonths:0,style:{yi:creed==="yi"?2:0,wei:creed==="wei"?2:0,li:creed==="li"?2:0},territories,officers,intel:{old_street:true},recruitMarket:[],usedActions:{},log:[],flags:{fatherRetired:false,aqiUnlocked:false,xieUnlocked:false,yeUnlocked:false,coalition:false,debtCrisisQueued:false,emergencyLoanTaken:false},factions:{east:{defeated:false},wan:{defeated:false},long:{defeated:false}},wins:0,losses:0,battles:0,casualties:0,lastBattleMonth:0,lastAction:null,lastBattle:null,winStreak:0,battleSession:null,ended:false,endingReason:""};
+  const territories={};Object.entries(TERRITORY_DEFS).forEach(([id,t])=>territories[id]={owner:t.owner,guard:t.guard,level:1,stability:t.owner==="player"?72:82,settling:0});
+  const s={version:VERSION,runId:`fog_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,name:officers[0].name,creed:CREEDS[creed]?creed:"yi",difficulty:DIFFICULTIES[difficulty]?difficulty:"standard",month:0,ap:3,tab:"hall",cash:36,crew:42,regroup:0,wounded:0,morale:62,rep:18,support:55,heat:8,training:0,insolvencyMonths:0,style:{yi:creed==="yi"?2:0,wei:creed==="wei"?2:0,li:creed==="li"?2:0},territories,officers,intel:{old_street:true},recruitMarket:[],usedActions:{},log:[],flags:{fatherRetired:false,aqiUnlocked:false,xieUnlocked:false,yeUnlocked:false,coalition:false,debtCrisisQueued:false,emergencyLoanTaken:false},factions:{east:{defeated:false,ambition:0},wan:{defeated:false,ambition:0},long:{defeated:false,ambition:0}},wins:0,losses:0,battles:0,casualties:0,lastBattleMonth:0,lastAction:null,lastBattle:null,winStreak:0,battleSession:null,ended:false,endingReason:""};
   refreshRecruitMarket(s);log(s,"story",`${s.name}接过了和联胜的龙头印。`);return s;
 }
 
 function officerCapacity(s){return 5+ownTerritories(s).length*2+(owns(s,"new_city")?2:0)}
+function totalCrew(s){return s.crew+(s.regroup||0)+(s.wounded||0)}
+// 从组织里扣人，按 能战→整补→养伤 的顺序，返回实际扣掉的数目。
+// 打完一仗 s.crew 常常是 0（人都在整补），任何 Math.max(1,s.crew-n) 的写法都会在这时凭空造人。
+function drainCrew(s,n){let left=Math.max(0,Math.round(n)),gone=0;for(const k of["crew","regroup","wounded"]){const take=Math.min(s[k]||0,left);s[k]=(s[k]||0)-take;left-=take;gone+=take;if(!left)break}return gone}
+// 人手上限绑定地盘：想养更多人只能先拿地，拿地又需要人。这是本作扩张压力的主旋钮。
+function crewCap(s){const ids=ownTerritories(s);return 40+ids.length*20+ids.reduce((sum,id)=>sum+((s.territories[id].level||1)-1),0)*6}
 function commonOfficerCount(s){return ownedOfficers(s).filter(o=>!o.named).length}
 function commonOfficer(id,name,type,trait,stats,cost,rng=Math.random){return{id,name,side:"market",role:`${type}人才`,type,portrait:"",stats,trait,traitText:`${trait}，在${type}岗位上更可靠。`,loyalty:rand(52,72,rng),resentment:0,merit:0,injured:0,exp:0,battles:0,wins:0,named:false,cost}}
 function rngToken(rng=Math.random){return Math.floor(rng()*46656).toString(36).padStart(3,"0")}
@@ -162,9 +172,34 @@ function recruitNamed(s,id){
   return false;
 }
 
-function monthlyGross(s){let gross=ownTerritories(s).reduce((sum,id)=>sum+TERRITORY_DEFS[id].income*(s.territories[id].level||1),0);if(hasOfficer(s,"sumanqing"))gross*=1.12;if(hasOfficer(s,"yerong"))gross*=1.15;if(s.creed==="li")gross*=1.12;gross*=diff(s).income;return Math.round(gross)}
-function monthlyUpkeep(s){let crew=s.crew*.13;if(owns(s,"south_dock"))crew*=.9;const officerCost=Math.max(0,ownedOfficers(s).length-4)*1.2,territoryCost=Math.max(0,ownTerritories(s).length-1)*2;return Math.round((crew+officerCost+territoryCost)*10)/10}
+function lockedTextOf(a,s){return typeof a.lockedText==="function"?a.lockedText(s):a.lockedText}
+function monthlyGross(s){let gross=ownTerritories(s).reduce((sum,id)=>sum+TERRITORY_DEFS[id].income*(s.territories[id].level||1)*((s.territories[id].settling||0)>0?.5:1),0);if(hasOfficer(s,"sumanqing"))gross*=1.12;if(hasOfficer(s,"yerong"))gross*=1.15;if(s.creed==="li")gross*=1.12;gross*=diff(s).income;return Math.round(gross)}
+function monthlyUpkeep(s){let crew=totalCrew(s)*.13;if(owns(s,"south_dock"))crew*=.9;const officerCost=Math.max(0,ownedOfficers(s).length-4)*1.2,territoryCost=Math.max(0,ownTerritories(s).length-1)*2;return Math.round((crew+officerCost+territoryCost)*10)/10}
 function monthlyNet(s){return Math.round((monthlyGross(s)-monthlyUpkeep(s))*10)/10}
+// 整补两个月归队、养伤四五个月且要花钱——"打完一仗伤不起"的实现在这里。
+// 必须在 applyEconomy 之前调用：医药费要计入当月账面，否则资金链危机会晚一个月才发作。
+function recoverCrew(s){
+  const out={back:0,healed:0,cost:0,broke:false};
+  if(s.regroup>0){out.back=Math.min(s.regroup,Math.max(5,Math.ceil(s.regroup*.5)));s.regroup-=out.back;s.crew+=out.back}
+  if(s.wounded>0){
+    const base=Math.min(s.wounded,Math.max(1,Math.ceil(s.wounded*.22))),cost=Math.round(s.wounded*.4*10)/10;
+    if(s.cash>=cost){addCash(s,-cost);out.cost=cost;out.healed=base}
+    else{out.broke=true;out.healed=Math.floor(base/2);change(s,"morale",-4);log(s,"bad","付不出伤者的药钱，养伤的人回得更慢了。")}
+    s.wounded-=out.healed;s.crew+=out.healed;
+  }
+  if(out.back||out.healed)log(s,"good",`${out.back} 人整补归队，${out.healed} 人伤愈。`);
+  return out;
+}
+function settlingTerritories(s){return ownTerritories(s).filter(id=>(s.territories[id].settling||0)>0)}
+function weakestOwned(s){return ownTerritories(s).slice().sort((a,b)=>s.territories[a].guard-s.territories[b].guard)[0]}
+function woundedCareCost(s){return Math.max(3,Math.round(s.wounded*.6*10)/10)}
+// 新打下来的地盘头三个月是负资产：收入减半、被进攻时驻防只算七成、街面随时闹事。
+// 扩张有代价——但这个代价可以用一个行动点（坐镇新地盘）买断，而不是干等。
+function tickSettling(s,rng=Math.random){
+  ownTerritories(s).forEach(id=>{const t=s.territories[id];if(!(t.settling>0))return;t.settling--;
+    if(chance(.25,rng)){addCash(s,-4);s.casualties+=drainCrew(s,3);change(s,"support",-3);log(s,"warn",`${TERRITORY_DEFS[id].name}的街面还不服管，又出了乱子。`)}
+    else if(t.settling===0)log(s,"good",`${TERRITORY_DEFS[id].name}的街面终于安静下来了。`)});
+}
 function applyEconomy(s){const gross=monthlyGross(s),upkeep=monthlyUpkeep(s),net=Math.round((gross-upkeep)*10)/10;addCash(s,net);s.insolvencyMonths=s.cash<0?(s.insolvencyMonths||0)+1:0;if(owns(s,"golden_bay"))change(s,"heat",2);if(net<0){change(s,"morale",-7);ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{o.loyalty=clamp(o.loyalty-3);o.resentment=clamp(o.resentment+2)});log(s,"bad",`本月收入${gross}万，支出${upkeep}万，账面继续失血。`)}else log(s,"story",`本月地盘净收入 ${net} 万。`);return{gross,upkeep,net}}
 
 function checkInsolvency(s){
@@ -198,6 +233,7 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   if(s.battleSession)throw new Error("battle in progress");
   if(!attackableTerritories(s).includes(targetId))throw new Error("target not attackable");
   if(s.crew<10)throw new Error("not enough crew");
+  if(s.ap<1)throw new Error("no action point");                                   // 必须排在 battleSession/crew 检查之后，既有测试依赖那两条的错误信息
   const leaders=[...new Set(leaderIds)].map(id=>officer(s,id)).filter(o=>o&&o.side==="player"&&!o.injured).slice(0,3);
   if(!leaders.length)throw new Error("no leaders");
   troops=clamp(Math.round(troops),10,s.crew);
@@ -207,6 +243,7 @@ function startBattle(s,{targetId,leaderIds,troops,tactic},rng=Math.random){
   if(ids.includes("player"))mods.moraleFloor=45;                                  // 沈川「沈家之后」
   if(ids.includes("yerong"))mods.retreatShield=true;                              // 叶蓉在阵：撤退不掉士气（经营首次参战）
   if(ids.includes("xiejiu")&&(s.winStreak||0)>=2)mods.multRest*=1.05;             // 谢九「只服胜者」
+  s.ap--;s.crew-=troops;                                                          // 人立刻离开能战池，直到 finishBattle 才分流回整补/养伤
   s.battleSession={targetId,leaderIds:ids,troops,tactic,stage:1,momentum:0,ratio:est.ratio,losses:0,enemyLoss:0,outcome:"",mods,log:[]};
   return s.battleSession;
 }
@@ -293,9 +330,9 @@ function applyStageChoice(s,optionId,rng=Math.random){
   session.momentum=Math.round((session.momentum+delta)*10)/10;
   if(opt.id==="duel")extra=resolveDuel(s,session,rng);                     // multRest 名为「剩余段」：单挑结果只能影响后续段，不能抬高本段
   const stageWon=delta>=0,ahead=session.momentum>=0;                       // stageWon=本段打赢没有；ahead=累计是否领先
-  const loss=stageLoss(s,session,ahead,(opt.casualtyMult??1),rng);         // 伤亡按累计局势定档，避免优势方被单段波动多收血
+  const loss=Math.min(stageLoss(s,session,ahead,(opt.casualtyMult??1),rng),session.troops-session.losses);  // 伤亡按累计局势定档；封顶在出战人数，否则幸存者会算成负数
   const told=session.stage===3?ahead:stageWon;                             // 决胜段的叙述必须与最终胜负一致
-  session.losses+=loss;s.crew=Math.max(1,s.crew-loss);s.casualties+=loss;
+  session.losses+=loss;s.casualties+=loss;                                 // 人已不在池子里，这里只记账
   session.enemyLoss+=Math.max(2,Math.round(s.territories[session.targetId].guard*(ahead?.15:.06)*(.85+rng()*.35)));
   session.log.push({name,text:stageText(s,session,opt,told,loss)+(extra?" "+extra:"")});
   session.stage++;
@@ -307,6 +344,9 @@ function finishBattle(s,rng=Math.random){
   const session=s.battleSession;if(!session)return null;
   const {targetId,tactic,troops}=session,t=s.territories[targetId],oldOwner=t.owner;
   const won=session.outcome==="win",retreated=session.outcome==="retreat";
+  // 出战的人在 startBattle 就离开了能战池，这里分三份收尾。阵亡的那部分永久消失——这是"打不起"的根源。
+  const survivors=Math.max(0,session.troops-session.losses),woundedBack=Math.round(session.losses*.55);
+  s.regroup=(s.regroup||0)+survivors;s.wounded=(s.wounded||0)+woundedBack;
   const leaders=session.leaderIds.map(id=>officer(s,id)).filter(Boolean);
   const meritMult=won&&session.leaderIds.includes("tangji")?1.5:1;                 // 唐霁「唯能者居」
   s.battles++;s.lastBattleMonth=s.month;s.training=Math.max(0,(s.training||0)-8);
@@ -323,7 +363,7 @@ function finishBattle(s,rng=Math.random){
     s.wins++;s.winStreak=(s.winStreak||0)+1;
     change(s,"morale",9);change(s,"rep",7);change(s,"support",t.stability>=55?2:-2);
     addCash(s,Math.round(TERRITORY_DEFS[targetId].income*.8));
-    t.owner="player";t.guard=Math.max(16,Math.round((troops-session.losses)*.45));
+    t.owner="player";t.guard=Math.max(28,Math.round((troops-session.losses)*.55));t.settling=3;
     t.stability=s.creed==="yi"?62:s.creed==="wei"?42:52;s.intel[targetId]=true;
     // 劝降来的人终究是对家的旧部：地盘落到手里，街面上却不服你。
     if(session.mods.convertRate>0){t.stability=clamp(t.stability-10);const gain=Math.round(session.enemyLoss*session.mods.convertRate);if(gain>0){s.crew+=gain;log(s,"good",`程野把 ${gain} 名对方的人带回了老街，${TERRITORY_DEFS[targetId].name}一时还压不住。`)}}
@@ -366,11 +406,81 @@ function queueCaptiveDecision(s,captured,owner){enqueue({title:`${captured.name}
     option("给一笔钱让他离开雾港","现金-12万；减少后患",()=>{captured.side="exiled";addCash(s,-12);markStyle(s,"li",1)})
   ]},"战后收编")}
 
-function enemyGrowth(s){Object.entries(s.territories).forEach(([id,t])=>{if(t.owner!=="player"){const add=Math.max(1,Math.round((1+TERRITORY_DEFS[id].income/18)*diff(s).enemyGrowth));t.guard=Math.min(TERRITORY_DEFS[id].final?110:78,t.guard+add)}})}
-function enemyAttack(s,rng=Math.random){if(s.month<6||s.month%3!==0||!chance(diff(s).enemyAttack,rng))return null;const targets=ownTerritories(s).filter(id=>id!=="old_street"&&TERRITORY_DEFS[id].neighbors.some(n=>s.territories[n].owner!=="player"));const oldStreetAvailable=owns(s,"old_street")&&TERRITORY_DEFS.old_street.neighbors.some(n=>s.territories[n].owner!=="player");if(!targets.length&&oldStreetAvailable)targets.push("old_street");if(!targets.length)return null;const targetId=pick(targets,rng),enemyNeighbor=TERRITORY_DEFS[targetId].neighbors.map(id=>({id,owner:s.territories[id].owner})).find(x=>x.owner!=="player"),attacker=enemyNeighbor?.owner||"coalition",t=s.territories[targetId],defenders=ownedOfficers(s).filter(o=>!o.injured).sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,2);const attackPower=(35+territoryCount(s,attacker)*12+s.month*.6)*diff(s).battle*(.85+rng()*.3),defPower=t.guard*1.15+defenders.reduce((a,o)=>a+leaderScore(o),0)+s.morale*.22,held=defPower>=attackPower,losses=Math.max(2,Math.round((held?.06:.13)*s.crew));s.crew=Math.max(1,s.crew-losses);s.casualties+=losses;change(s,"morale",held?4:-8);change(s,"heat",4);if(held){t.guard=Math.max(12,t.guard-rand(2,6,rng));log(s,"good",`${FACTIONS[attacker].name}反扑${TERRITORY_DEFS[targetId].name}，被留守人马挡了回去。`)}else{t.owner=attacker;t.guard=20;t.stability=58;change(s,"rep",-7);log(s,"bad",`${TERRITORY_DEFS[targetId].name}在反扑中失守。`)}const report={targetId,attacker,held,losses};enqueue({title:held?`反扑被挡在${TERRITORY_DEFS[targetId].name}`:`${TERRITORY_DEFS[targetId].name}失守`,portrait:factionLeaders(s,attacker)[0]?.portrait||"assets/player.webp",body:`<p>${FACTIONS[attacker].name}从外线压向${TERRITORY_DEFS[targetId].name}。${held?"留守头目撑到了援手赶到，对方没能迈过最后一道门。":"驻防连续求援，但人手赶到之前，招牌已经被摘下来。"}</p><p>本次折损 ${losses} 人。</p>`,options:[option(held?"守住了":"这笔账会讨回来","",()=>{})]},"敌对反扑");if(!held&&targetId==="old_street")endGame(s,"lost");return report}
+// ---- 敌方战略级扩张 ----
+// 与 enemyAttack 的分工：enemyTurn 会真的让地盘易主（三家之间也互相吃），enemyAttack 只做消耗。
+// 玩家不动手的话，三家会互相吞并，后期面对的可能是一个 5 块地的巨无霸——"什么时候动手"因此成为真决策。
+const AI_FACTIONS=["east","wan","long"];
+function effectiveGuard(s,id){const t=s.territories[id];return t.guard*(t.settling>0?.7:1)}   // 驻防期的地盘守不住，这是扩张的代价
+// 每月至多一家出手（ambition 最高者），只有出手的那家归零，其余保留累积值等下月——
+// 否则被压住的一家会永远轮不到，地图就死了。
+function pickAmbitiousFaction(s,rng=Math.random){
+  AI_FACTIONS.forEach(f=>{const n=territoryCount(s,f);if(n)s.factions[f].ambition=(s.factions[f].ambition||0)+(1+n*.5)*diff(s).enemyGrowth});
+  const ready=AI_FACTIONS.filter(f=>(s.factions[f].ambition||0)>=12&&territoryCount(s,f)>0);
+  if(!ready.length)return null;
+  // 平局要随机破，不能靠 AI_FACTIONS 的书写顺序——开局三家 ambition 完全相同，
+  // 按数组顺序取的话东潮会永远先手，实测 5/5 局都是东潮会一家独大，地图不再有变数。
+  return ready.map(f=>({f,w:(s.factions[f].ambition||0)+rng()}))
+    .sort((a,b)=>b.w-a.w)[0].f;
+}
+// 地图是个星形：三家各据一条辐条，彼此并不接壤，只共享老街和中央港区两个枢纽。
+// 所以中央港区必须允许 AI 攻取——否则"三家互相吞并"在几何上根本不可能发生（实测 60 个月零次易主）。
+// 抢到中央港区的那家会同时与所有人接壤，"拖到后期要面对一个巨无霸"由此成立；
+// 玩家的终局之战也还在——checkVictory 要求占满 8 块地，中央港区无论落在谁手里都得打下来。
+// 老街则排除：祖堂失守＝当场结束这一局，那种结局应该来自经济崩盘或 enemyAttack，而不是一次战略掷骰。
+function enemyExpansionTarget(s,f,rng=Math.random){
+  const seen=new Set(),out=[];
+  Object.keys(s.territories).filter(id=>s.territories[id].owner===f)
+    .forEach(id=>TERRITORY_DEFS[id].neighbors.forEach(n=>{if(s.territories[n].owner!==f&&!seen.has(n)){seen.add(n);out.push(n)}}));
+  // 在两个最弱目标里随机挑一个，而不是永远打最弱的那块——否则 AI 会像制导导弹一样
+  // 每次都精准锤玩家刚打下来、驻防最薄的那块地，玩家会觉得被针对而不是被围攻。
+  const ranked=out.filter(id=>id!=="old_street").sort((a,b)=>effectiveGuard(s,a)-effectiveGuard(s,b));
+  return ranked.length?pick(ranked.slice(0,2),rng):null;
+}
+function enemyTurn(s,rng=Math.random){
+  if(s.ended)return null;
+  const f=pickAmbitiousFaction(s,rng);if(!f)return null;
+  s.factions[f].ambition=0;
+  const targetId=enemyExpansionTarget(s,f,rng);if(!targetId)return null;
+  const t=s.territories[targetId],defender=t.owner;
+  // 标度必须和守方同一个量级：守方是 驻防*1.18*1.15 + 两名头目，一块 82 驻防的地盘约 145 点。
+  // 旧式的 地盘数*16 只有 32 点，AI 永远打不动任何人——实测 60 个月零次易主。
+  const atk=(territoryCount(s,f)*71+factionLeaders(s,f).reduce((a,o)=>a+leaderScore(o),0)*.8+s.month*.6)*diff(s).battle*(.75+rng()*.5);
+  const defLeaders=defender==="player"?ownedOfficers(s).filter(o=>!o.injured).sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,2):factionLeaders(s,defender).slice(0,2);
+  const def=effectiveGuard(s,targetId)*1.18*1.15+defLeaders.reduce((a,o)=>a+leaderScore(o),0);   // 1.15 守方加成：防止 AI 滚雪球滚到玩家无法翻盘
+  const won=atk>def,name=TERRITORY_DEFS[targetId].name;
+  if(!won){t.guard=Math.max(12,t.guard-rand(2,5,rng));log(s,"story",`${FACTIONS[f].name}想吃下${name}，没能啃动。`);return{faction:f,targetId,defender,won:false}}
+  t.owner=f;t.guard=Math.round(t.guard*.7)+18;t.stability=50;t.settling=0;
+  if(defender==="player"){
+    change(s,"rep",-6);change(s,"morale",-7);s.casualties+=drainCrew(s,Math.max(3,Math.round(totalCrew(s)*.08)));
+    log(s,"bad",`${FACTIONS[f].name}从和联胜手里夺走了${name}。`);
+    enqueue({title:`${name}被${FACTIONS[f].name}夺走`,portrait:factionLeaders(s,f)[0]?.portrait||"assets/player.webp",
+      body:`<p>这不是一次试探。${FACTIONS[f].name}备足了人手，直接压到${name}的门口。</p><p>等老街的援手赶到，招牌已经换了。</p>`,
+      options:[option("这笔账记下了","",()=>{})]},"地盘易主");
+  }else{
+    log(s,"story",`${FACTIONS[f].name}吞下了${FACTIONS[defender].name}的${name}。`);
+    if(territoryCount(s,defender)===0&&s.factions[defender]&&!s.factions[defender].defeated){
+      s.factions[defender].defeated=true;
+      const boss=officer(s,{east:"hewanshan",wan:"fangjingyao",long:"guchangfeng"}[defender]);
+      if(boss)boss.side="defeated";
+      log(s,"story",`${FACTIONS[defender].name}的招牌被${FACTIONS[f].name}摘了下来。`);
+      enqueue({title:`${FACTIONS[defender].name}没能撑到你动手`,portrait:boss?.portrait||"assets/player.webp",
+        body:`<p>${FACTIONS[f].name}吃下了${FACTIONS[defender].name}的最后一块地。雾港的桌上从此少了一个人，也少了一个可以借力的人。</p><p><span class='dialogue'>“他们吞得越快，轮到我们的时候就越难。”</span></p>`,
+        options:[option("知道了","",()=>{})]},"雾港变局");
+    }
+  }
+  return{faction:f,targetId,defender,won:true};
+}
+
+// 驻防数值由 tests/balance.test.mjs 的三种玩家画像扫描定出（缩放系数 1.55），不是拍脑袋：
+//   莽夫(只打优势)标准 18 月 / 死战 38 月 63%通关；稳健(攒够才打)标准 37 月 100%；躺平必亡。
+// 老街 44 是祖堂的底线——低于此值，卡在一块地的玩家会被 enemyAttack 直接磨死，实测 16/16 灭亡。
+// 成长与上限都随该家地盘数放大：做大的势力防线要跟着变厚，否则玩家滚起雪球之后再无对手。
+// 只在低于上限时增长——一家被打残后地盘变少、上限下降，不应该反过来让它的驻防缩水。
+function enemyGrowth(s){Object.entries(s.territories).forEach(([id,t])=>{if(t.owner==="player")return;const own=territoryCount(s,t.owner),cap=TERRITORY_DEFS[id].final?217:85+own*28,add=Math.max(1,Math.round((1+TERRITORY_DEFS[id].income/18)*(1+own*.25)*diff(s).enemyGrowth));if(t.guard<cap)t.guard=Math.min(cap,t.guard+add)})}
+function enemyAttack(s,rng=Math.random){if(s.month<6||s.month%3!==0||!chance(diff(s).enemyAttack,rng))return null;const targets=ownTerritories(s).filter(id=>id!=="old_street"&&TERRITORY_DEFS[id].neighbors.some(n=>s.territories[n].owner!=="player"));const oldStreetAvailable=owns(s,"old_street")&&TERRITORY_DEFS.old_street.neighbors.some(n=>s.territories[n].owner!=="player");if(!targets.length&&oldStreetAvailable)targets.push("old_street");if(!targets.length)return null;const targetId=pick(targets,rng),enemyNeighbor=TERRITORY_DEFS[targetId].neighbors.map(id=>({id,owner:s.territories[id].owner})).find(x=>x.owner!=="player"),attacker=enemyNeighbor?.owner||"coalition",t=s.territories[targetId],defenders=ownedOfficers(s).filter(o=>!o.injured).sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,2);const attackPower=(35+territoryCount(s,attacker)*12+s.month*.6)*diff(s).battle*(.85+rng()*.3),defPower=effectiveGuard(s,targetId)*1.15+defenders.reduce((a,o)=>a+leaderScore(o),0)+s.morale*.22,held=defPower>=attackPower,losses=drainCrew(s,Math.max(2,Math.round((held?.06:.13)*totalCrew(s))));s.casualties+=losses;change(s,"morale",held?4:-8);change(s,"heat",4);if(held){t.guard=Math.max(12,t.guard-rand(2,6,rng));log(s,"good",`${FACTIONS[attacker].name}反扑${TERRITORY_DEFS[targetId].name}，被留守人马挡了回去。`)}else{t.owner=attacker;t.guard=20;t.stability=58;change(s,"rep",-7);log(s,"bad",`${TERRITORY_DEFS[targetId].name}在反扑中失守。`)}const report={targetId,attacker,held,losses};enqueue({title:held?`反扑被挡在${TERRITORY_DEFS[targetId].name}`:`${TERRITORY_DEFS[targetId].name}失守`,portrait:factionLeaders(s,attacker)[0]?.portrait||"assets/player.webp",body:`<p>${FACTIONS[attacker].name}从外线压向${TERRITORY_DEFS[targetId].name}。${held?"留守头目撑到了援手赶到，对方没能迈过最后一道门。":"驻防连续求援，但人手赶到之前，招牌已经被摘下来。"}</p><p>本次折损 ${losses} 人。</p>`,options:[option(held?"守住了":"这笔账会讨回来","",()=>{})]},"敌对反扑");if(!held&&targetId==="old_street")endGame(s,"lost");return report}
 
 // 血拼进行中不得再花行动点：月度推进已经被挡住了，行动点却还能照花，属于同一个漏洞的另一半。
-function applyAction(s,id){const a=ACTIONS.find(x=>x.id===id);if(!a||s.ap<1||(s.usedActions[id]||0)>=a.max)return false;if(s.battleSession){toast("先把这场血拼打完");return false}if(a.canRun&&!a.canRun(s)){toast(a.lockedText||"当前条件不足");return false}s.ap--;s.usedActions[id]=(s.usedActions[id]||0)+1;a.run(s);s.lastAction={name:a.name,text:s.log[0]?.text||"这个月做了一件事。"};saveGame();renderAll();return true}
+function applyAction(s,id){const a=ACTIONS.find(x=>x.id===id);if(!a||s.ap<1||(s.usedActions[id]||0)>=a.max)return false;if(s.battleSession){toast("先把这场血拼打完");return false}if(a.canRun&&!a.canRun(s)){toast(lockedTextOf(a,s)||"当前条件不足");return false}s.ap--;s.usedActions[id]=(s.usedActions[id]||0)+1;a.run(s);s.lastAction={name:a.name,text:s.log[0]?.text||"这个月做了一件事。"};saveGame();renderAll();return true}
 
 function maybeUnlockNamed(s){if(s.month>=2&&!s.flags.aqiUnlocked&&!hasOfficer(s,"aqi")){s.flags.aqiUnlocked=true;enqueue({title:"老街口那个年轻人又来了",portrait:CHARACTER_DEFS.aqi.portrait,body:"<p>他叫阿七，连续三天坐在祖堂对面的台阶上。程野问他想要什么，他朝你的方向抬了抬下巴：<span class='dialogue'>“想看看他怎么把丢掉的东西拿回来。”</span></p>",options:[option("让他去招募页等着","解锁成长型人物阿七",()=>{change(s,"support",2)},"gold")]},"人才来投")}
   if((s.cash>=45||owns(s,"west_market"))&&!s.flags.yeUnlocked&&!hasOfficer(s,"yerong"))s.flags.yeUnlocked=true;
@@ -379,15 +489,15 @@ function maybeUnlockNamed(s){if(s.month>=2&&!s.flags.aqiUnlocked&&!hasOfficer(s,
 
 function chooseRandomEvent(s,rng=Math.random){const valid=RANDOM_EVENTS.filter(e=>!s.flags[`event_${e.id}`]&&(!e.condition||e.condition(s)));if(!valid.length)return null;const e=pick(valid,rng);s.flags[`event_${e.id}`]=true;return{title:e.title,portrait:e.portrait,body:e.body,options:e.options(s)}}
 function checkPromises(s){if(s.flags.warPromise&&s.month>s.flags.warPromise&&s.lastBattleMonth<s.flags.warPromise-2){s.flags.warPromise=0;loyalty(s,"zhaokui",-14);resent(s,"zhaokui",18);change(s,"morale",-8);log(s,"bad","你没有兑现对赵魁的开战承诺。")}}
-function officerTension(s){ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{if(o.resentment>=70&&o.loyalty<45&&chance(.2)){o.side="defected";s.crew=Math.max(1,s.crew-8);change(s,"morale",-10);log(s,"bad",`${o.name}带着8个人离开了和联胜。`)}else if(o.loyalty<35)change(s,"morale",-1)})}
+function officerTension(s,rng=Math.random){ownedOfficers(s).filter(o=>o.id!=="player").forEach(o=>{if(o.resentment>=70&&o.loyalty<45&&chance(.2,rng)){o.side="defected";const took=drainCrew(s,8);change(s,"morale",-10);log(s,"bad",`${o.name}带着${took}个人离开了和联胜。`)}else if(o.loyalty<35)change(s,"morale",-1)})}
 
 function advanceMonth(s,force=false){if(s.battleSession){toast("先把这场血拼打完");return false}if(s.ended)return false;if(s.ap>0&&!force){enqueue({title:"本月还有行动点",body:`<p>还剩 <b>${s.ap}</b> 个行动点。它们不会带到下个月。</p>`,options:[option("继续安排","回到议事堂",()=>{}),option("直接进入下月","放弃剩余行动点",()=>setTimeout(()=>advanceMonth(s,true),80),"danger")]},"时间确认");return false}
-  s.month++;s.ap=3;s.usedActions={};s.lastAction=null;applyEconomy(s);checkInsolvency(s);
+  s.month++;s.ap=3;s.usedActions={};s.lastAction=null;recoverCrew(s);tickSettling(s);applyEconomy(s);checkInsolvency(s);
   // 伤病对所有人愈合：单挑会打伤敌将，而 factionLeaders 过滤 injured<=0，
   // 不让敌将痊愈会永久断掉战后收编那条线（韩彪/魏小楼从此再也招不到）。
   s.officers.forEach(o=>{if(o.injured>0){o.injured--;if(o.injured===0&&o.side==="player")log(s,"good",`${o.name}伤愈回到了祖堂。`)}});
   ownedOfficers(s).forEach(o=>{if(o.exp>=10){const k=pick(Object.keys(o.stats));o.stats[k]=clamp(o.stats[k]+1,1,99);o.exp-=10}});
-  change(s,"morale",Math.round((58-s.morale)*.18));change(s,"heat",-2);refreshRecruitMarket(s);enemyGrowth(s);maybeUnlockNamed(s);checkPromises(s);officerTension(s);enemyAttack(s);
+  change(s,"morale",Math.round((58-s.morale)*.18));change(s,"heat",-2);refreshRecruitMarket(s);enemyGrowth(s);enemyTurn(s);maybeUnlockNamed(s);checkPromises(s);officerTension(s);enemyAttack(s);
   // 老街在反扑里失守会当场结束这一局，别再往队列里塞这个月的剧情弹窗。
   if(s.ended){saveGame();renderAll();pumpModal();return true}
   if(s.month===4&&!s.flags.fatherRetired){s.flags.fatherRetired=true;enqueue({title:"沈振海最后一次走进祖堂",portrait:CHARACTER_DEFS.father.portrait,body:"<p>他比上个月更瘦，却自己走完了从门口到主位的路。他没有坐，只把蓝色旧账簿放在你的位置上。<span class='dialogue'>“以后这扇门，我不进了。”</span></p><p>赵魁低下头，苏曼青合上笔，程野替他拉开了门。父亲没有回头。</p>",options:[option("起身送他到门口","三名旧部忠诚+5；义+2",()=>{["zhaokui","sumanqing","chengye"].forEach(id=>loyalty(s,id,5));markStyle(s,"yi",2)}),option("留在主位上","声望+5；威+2",()=>{change(s,"rep",5);markStyle(s,"wei",2)})]},"父亲退场")}
@@ -429,7 +539,14 @@ function normalizeState(s){if(!s||typeof s!=="object"||s.version!==VERSION||type
   // 否则在危机弹窗开着时刷新，标志会以 true 落盘，checkInsolvency 从此永远直接返回。
   s.flags.debtCrisisQueued=false;
   s.winStreak=Number.isFinite(s.winStreak)?Math.max(0,s.winStreak):0;
-  if(!validBattleSession(s)){if(s.battleSession)log(s,"warn","上一场血拼中断，队伍已经撤回老街。");s.battleSession=null}
+  s.crew=Number.isFinite(s.crew)?Math.max(0,Math.round(s.crew)):0;
+  s.regroup=Number.isFinite(s.regroup)?Math.max(0,Math.round(s.regroup)):0;
+  s.wounded=Number.isFinite(s.wounded)?Math.max(0,Math.round(s.wounded)):0;
+  // Part 2/3 新增的字段：老存档里没有，缺了会让 enemyTurn 和驻防期直接算出 NaN。
+  AI_FACTIONS.forEach(f=>{const fs=s.factions&&s.factions[f];if(fs)fs.ambition=Number.isFinite(fs.ambition)?Math.max(0,fs.ambition):0});
+  Object.keys(TERRITORY_DEFS).forEach(id=>{const t=s.territories[id];t.settling=Number.isFinite(t.settling)?clamp(Math.round(t.settling),0,3):0});
+  // 出战的人在 startBattle 就离开了能战池。丢弃损坏的会话时不还人，他们就凭空蒸发了。
+  if(!validBattleSession(s)){if(s.battleSession){s.regroup+=Math.max(0,Math.round(Number(s.battleSession.troops)||0));log(s,"warn","上一场血拼中断，队伍已经撤回老街整补。")}s.battleSession=null}
   return s}
 function loadGame(){if(typeof localStorage==="undefined")return null;try{return normalizeState(JSON.parse(localStorage.getItem(SAVE_KEY)||"null"))}catch{return null}}
 function deleteSave(){if(typeof localStorage!=="undefined")localStorage.removeItem(SAVE_KEY)}
@@ -441,11 +558,20 @@ function showGame(){if(!S){showMenu();toast("存档已失效，请重新开局")
 function renderPrologue(){const p=PROLOGUE[prologueIndex];$("prologuePortrait").src=assetUrl(p.portrait);$("prologueKicker").textContent=p.kicker;$("prologueTitle").textContent=p.title;$("prologueBody").innerHTML=p.body.map(x=>`<p>${x}</p>`).join("");$("prologueProgress").style.width=`${(prologueIndex+1)/PROLOGUE.length*100}%`;$("nextPrologueBtn").innerHTML=prologueIndex===PROLOGUE.length-1?"走进祖堂 <span>→</span>":"继续 <span>→</span>"}
 
 function chapterInfo(s){const m=s.month;if(m>=MAX_MONTHS)return["加时战役 · 不统一不收手","加时决战"];if(m<12)return["第一年 · 守住父业","守住父业"];if(m<30)return[`第${Math.floor(m/12)+1}年 · 吞并小势力`,"吞并小势力"];if(m<48)return[`第${Math.floor(m/12)+1}年 · 港城争霸`,"港城争霸"];return[`第${Math.floor(m/12)+1}年 · 一统江湖`,"一统江湖"]}
-function renderAll(){if(!S||typeof document==="undefined")return;const [chapter,phase]=chapterInfo(S),net=monthlyNet(S);$("chapterText").textContent=chapter;$("phaseText").textContent=phase;$("monthText").textContent=monthDisplay(S);$("apText").textContent=`${S.ap} / 3`;$("cashText").textContent=`${Math.round(S.cash)}万`;$("crewText").textContent=S.crew;$("playerNameText").textContent=S.name;$("creedBadge").textContent=CREEDS[S.creed].name;$("territoryCount").textContent=`${ownTerritories(S).length} / 8`;[["morale",S.morale],["rep",S.rep],["support",S.support],["heat",S.heat]].forEach(([k,v])=>{$(`${k}Text`).textContent=Math.round(v);$(`${k}Bar`).style.width=`${clamp(v)}%`});$("netIncomeText").textContent=`${net>=0?"+":""}${net}万`;$("netIncomeText").style.color=net>=0?"var(--green)":"var(--red)";$("incomeBreakdown").innerHTML=`<div class="income-item"><span>地盘总收入</span><b>+${monthlyGross(S)}万</b></div><div class="income-item"><span>人手与头目支出</span><b>-${monthlyUpkeep(S)}万</b></div>`;$("turnHint").textContent=S.battleSession?`${TERRITORY_DEFS[S.battleSession.targetId].name}血拼中 · ${STAGE_NAMES[S.battleSession.stage-1]}（第${S.battleSession.stage}/3段）`:`${attackableTerritories(S).length}块地可进攻 · ${ownedOfficers(S).length}/${officerCapacity(S)}名头目`;$("gameNav").querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.tab===S.tab));renderTab()}
+// 打完一仗能战人手会暴跌到个位数，若不标出整补/养伤，玩家会以为人凭空没了。
+// 顶栏很窄：只放最要紧的两个数，总数与上限挂在 title 上，避免折成三行。
+function crewBreakdownText(s){
+  const parts=[];
+  if(s.regroup>0)parts.push(`整补${s.regroup}`);
+  if(s.wounded>0)parts.push(`<span class="hurt">养伤${s.wounded}</span>`);
+  if(!parts.length)parts.push(`${totalCrew(s)}/${crewCap(s)}`);
+  return parts.join(" ");
+}
+function renderAll(){if(!S||typeof document==="undefined")return;const [chapter,phase]=chapterInfo(S),net=monthlyNet(S);$("chapterText").textContent=chapter;$("phaseText").textContent=phase;$("monthText").textContent=monthDisplay(S);$("apText").textContent=`${S.ap} / 3`;$("cashText").textContent=`${Math.round(S.cash)}万`;$("crewText").textContent=S.crew;$("crewBreakdown").innerHTML=crewBreakdownText(S);$("crewBreakdown").title=`能战 ${S.crew} · 整补 ${S.regroup} · 养伤 ${S.wounded} · 合计 ${totalCrew(S)}/${crewCap(S)}`;$("playerNameText").textContent=S.name;$("creedBadge").textContent=CREEDS[S.creed].name;$("territoryCount").textContent=`${ownTerritories(S).length} / 8`;[["morale",S.morale],["rep",S.rep],["support",S.support],["heat",S.heat]].forEach(([k,v])=>{$(`${k}Text`).textContent=Math.round(v);$(`${k}Bar`).style.width=`${clamp(v)}%`});$("netIncomeText").textContent=`${net>=0?"+":""}${net}万`;$("netIncomeText").style.color=net>=0?"var(--green)":"var(--red)";$("incomeBreakdown").innerHTML=`<div class="income-item"><span>地盘总收入</span><b>+${monthlyGross(S)}万</b></div><div class="income-item"><span>人手与头目支出</span><b>-${monthlyUpkeep(S)}万</b></div>`;$("turnHint").textContent=S.battleSession?`${TERRITORY_DEFS[S.battleSession.targetId].name}血拼中 · ${STAGE_NAMES[S.battleSession.stage-1]}（第${S.battleSession.stage}/3段）`:`${attackableTerritories(S).length}块地可进攻 · ${ownedOfficers(S).length}/${officerCapacity(S)}名头目`;$("gameNav").querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.tab===S.tab));renderTab()}
 function metrics(rows){return`<div class="metric-grid">${rows.map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>`}
 
 function renderTab(){({hall:renderHall,recruit:renderRecruit,map:renderMap,battle:renderBattle,roster:renderRoster,chronicle:renderChronicle}[S.tab]||renderHall)()}
-function renderHall(){const panel=$("panel"),available=ACTIONS;panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">MONTHLY COUNCIL</span><h2>${esc(S.name)}，这个月和联胜做什么？</h2><p>你的目标是吞并东潮会、万盛堂和长风社，最后攻入中央港区。行动点可以养人、攢钱、查情报；血拼本身不消耗行动点，但会消耗真实人手。</p>${metrics([[`${S.ap}/3`,"剩余行动"],[ownTerritories(S).length,"地盘"],[S.wins,"血拼胜场"],[ownedOfficers(S).length,"头目"]])}</section>${S.lastAction?`<div class="feedback-banner"><b>${esc(S.lastAction.name)}</b><p>${esc(S.lastAction.text)}</p></div>`:""}<div class="section-head"><h2>本月行动</h2><span>同类行动有次数限制</span></div><div class="action-grid">${available.map(a=>{const used=S.usedActions[a.id]||0,unavailable=!!(a.canRun&&!a.canRun(S)),disabled=S.ap<=0||used>=a.max||unavailable;return`<article class="action-card ${used?"used":""}"><div class="action-icon">${a.icon}</div><h3>${a.name}</h3><p>${a.desc}</p><div class="effect-row">${a.effects.map(x=>`<span>${x}</span>`).join("")}</div><button data-action="${a.id}" ${disabled?"disabled":""}>${used>=a.max?"本月已做":S.ap<=0?"行动点用完":unavailable?a.lockedText||"条件不足":"安排 · 1点"}</button></article>`}).join("")}</div><div class="section-head"><h2>父亲留下的三名旧部</h2><span>他们忠于的还不一定是你</span></div><div class="card-grid">${["zhaokui","sumanqing","chengye"].map(id=>officerMiniCard(officer(S,id))).join("")}</div>`;panel.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>applyAction(S,b.dataset.action)))}
+function renderHall(){const panel=$("panel"),available=ACTIONS;panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">MONTHLY COUNCIL</span><h2>${esc(S.name)}，这个月和联胜做什么？</h2><p>你的目标是吞并东潮会、万盛堂和长风社，最后攻入中央港区。行动点可以养人、攢钱、查情报。发起血拼额外消耗 1 个行动点，出战的人手要几个月才归队。</p>${metrics([[`${S.ap}/3`,"剩余行动"],[ownTerritories(S).length,"地盘"],[S.wins,"血拼胜场"],[ownedOfficers(S).length,"头目"]])}</section>${S.lastAction?`<div class="feedback-banner"><b>${esc(S.lastAction.name)}</b><p>${esc(S.lastAction.text)}</p></div>`:""}<div class="section-head"><h2>本月行动</h2><span>同类行动有次数限制</span></div><div class="action-grid">${available.map(a=>{const used=S.usedActions[a.id]||0,unavailable=!!(a.canRun&&!a.canRun(S)),disabled=S.ap<=0||used>=a.max||unavailable;return`<article class="action-card ${used?"used":""}"><div class="action-icon">${a.icon}</div><h3>${a.name}</h3><p>${a.desc}</p><div class="effect-row">${a.effects.map(x=>`<span>${x}</span>`).join("")}</div><button data-action="${a.id}" ${disabled?"disabled":""}>${used>=a.max?"本月已做":S.ap<=0?"行动点用完":unavailable?lockedTextOf(a,S)||"条件不足":"安排 · 1点"}</button></article>`}).join("")}</div><div class="section-head"><h2>父亲留下的三名旧部</h2><span>他们忠于的还不一定是你</span></div><div class="card-grid">${["zhaokui","sumanqing","chengye"].map(id=>officerMiniCard(officer(S,id))).join("")}</div>`;panel.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>applyAction(S,b.dataset.action)))}
 
 function officerMiniCard(o){if(!o)return"";const face=o.portrait?`<img src="${assetUrl(o.portrait)}" alt="${esc(o.name)}">`:`<div class="common-avatar">${esc(o.name.slice(-1))}</div>`;return`<article class="officer-card ${o.portrait?"portrait-card":""} ${o.injured?"injured":""}">${face}<div class="card-copy"><div class="role-line"><h3>${esc(o.name)}</h3><span>${esc(o.type)}</span></div><p>${esc(o.trait)} · ${esc(o.role)}</p><div class="stat-chips"><span>武${o.stats.force}</span><span>统${o.stats.command}</span><span>谋${o.stats.scheme}</span><span>经${o.stats.business}</span><span>魅${o.stats.charm}</span></div><div class="meter-row"><span>忠诚 ${Math.round(o.loyalty)}</span><b>${o.injured?`伤${o.injured}月`:`功劳 ${o.merit}`}</b></div><div class="loyalty-track"><i style="width:${o.loyalty}%"></i></div></div></article>`}
 
@@ -454,7 +580,7 @@ function namedRecruitCard(id){const d=CHARACTER_DEFS[id],st=namedCandidateStatus
 function commonRecruitCard(c){const cost=recruitCost(S,c.cost),disabled=S.ap<1||S.cash<cost||ownedOfficers(S).length>=officerCapacity(S);return`<article class="recruit-card"><div class="common-avatar">${esc(c.name.slice(-1))}</div><span class="eyebrow">${esc(c.type)}</span><h3>${esc(c.name)}</h3><p>${esc(c.trait)}。忠诚预估 ${Math.round(c.loyalty)}。</p><div class="stat-chips"><span>武${c.stats.force}</span><span>统${c.stats.command}</span><span>谋${c.stats.scheme}</span><span>经${c.stats.business}</span><span>魅${c.stats.charm}</span></div><button data-hire-common="${c.id}" ${disabled?"disabled":""}>${ownedOfficers(S).length>=officerCapacity(S)?"头目上限已满":`招募 · ${cost}万 · 1点`}</button></article>`}
 
 function renderMap(){const panel=$("panel");panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">FOG HARBOR MAP</span><h2>雾港没有空白的地，只有还没换招牌的地</h2><p>只能进攻与自家地盘相邻的区域。中央港区会在你拿下其余七块地后开放，那是最后一战。</p>${metrics([[ownTerritories(S).length,"已占地盘"],[monthlyGross(S)+"万","月总收入"],[attackableTerritories(S).length,"可攻目标"],[Object.values(S.factions).filter(x=>x.defeated).length,"已吞并社团"]])}</section><div class="map-legend">${Object.entries(FACTIONS).map(([id,f])=>`<span><i style="background:${f.color}"></i>${f.name}</span>`).join("")}</div><div class="territory-grid">${Object.keys(TERRITORY_DEFS).map(territoryCard).join("")}</div>`;panel.querySelectorAll("[data-attack-territory]").forEach(b=>b.addEventListener("click",()=>{S.tab="battle";battleDraft.targetId=b.dataset.attackTerritory;renderAll()}));panel.querySelectorAll("[data-upgrade-territory]").forEach(b=>b.addEventListener("click",()=>upgradeTerritory(b.dataset.upgradeTerritory)))}
-function territoryCard(id){const d=TERRITORY_DEFS[id],t=S.territories[id],f=FACTIONS[t.owner],mine=t.owner==="player",attackable=attackableTerritories(S).includes(id),locked=d.final&&ownTerritories(S).length<7,cost=territoryUpgradeCost(S,id);return`<article class="territory-card ${mine?"mine":""} ${attackable?"attackable":""} ${locked?"locked":""}" style="--owner-color:${f.color}"><span class="territory-owner">${f.name}</span><h3>${d.name}</h3><p class="territory-bonus">${d.bonus}</p><div class="stat-chips"><span>收入 ${d.income*t.level}万</span><span>驻防 ${t.guard}</span><span>稳定 ${t.stability}</span><span>Lv.${t.level}</span></div><div class="territory-actions">${mine?`<button data-upgrade-territory="${id}" ${S.ap<1||S.cash<cost?"disabled":""}>投资 ${cost}万·1点</button>`:attackable?`<button data-attack-territory="${id}">制定进攻计划</button>`:`<button disabled>${locked?"最终区域":"尚不相邻"}</button>`}</div></article>`}
+function territoryCard(id){const d=TERRITORY_DEFS[id],t=S.territories[id],f=FACTIONS[t.owner],mine=t.owner==="player",attackable=attackableTerritories(S).includes(id),locked=d.final&&ownTerritories(S).length<7,cost=territoryUpgradeCost(S,id);return`<article class="territory-card ${mine?"mine":""} ${attackable?"attackable":""} ${locked?"locked":""} ${mine&&t.settling>0?"settling":""}" style="--owner-color:${f.color}"><span class="territory-owner">${f.name}</span><h3>${d.name}${mine&&t.settling>0?`<span class="settling-tag">未稳 ${t.settling}月</span>`:""}</h3><p class="territory-bonus">${d.bonus}</p><div class="stat-chips"><span>收入 ${d.income*t.level}万</span><span>驻防 ${t.guard}</span><span>稳定 ${t.stability}</span><span>Lv.${t.level}</span></div><div class="territory-actions">${mine?`<button data-upgrade-territory="${id}" ${S.ap<1||S.cash<cost?"disabled":""}>投资 ${cost}万·1点</button>`:attackable?`<button data-attack-territory="${id}">制定进攻计划</button>`:`<button disabled>${locked?"最终区域":"尚不相邻"}</button>`}</div></article>`}
 function territoryUpgradeCost(s,id){let cost=18+(s.territories[id].level-1)*16;if(owns(s,"west_market"))cost*=.85;return Math.round(cost)}
 function upgradeTerritory(id){const t=S.territories[id];if(!t||t.owner!=="player"||S.ap<1||t.level>=3)return;const cost=territoryUpgradeCost(S,id);if(S.cash<cost){toast("现金不足");return}S.ap--;addCash(S,-cost);t.level++;t.guard+=10;t.stability=clamp(t.stability+8);log(S,"good",`${TERRITORY_DEFS[id].name}完成了一轮投资和加固。`);saveGame();renderAll()}
 
@@ -476,7 +602,7 @@ function renderBattleSession(){
     if(res.ended)announceBattleResult(res.report);
   }));
 }
-function renderBattle(){if(S.battleSession)return renderBattleSession();const panel=$("panel"),targets=attackableTerritories(S);if(!targets.length){panel.innerHTML='<div class="empty-state">当前没有可进攻地盘。如果你已占七地，中央港区会成为最后目标。</div>';return}if(S.crew<10){panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">BATTLE PLAN</span><h2>人手不足，今晚不能开战</h2><p>至少需要10名可调人手。当前只有 <b>${S.crew}</b> 人，先去议事堂招人或等待地盘回款。</p></section><button class="launch-btn" disabled>人手不足10人</button>${S.lastBattle?renderLastBattle(S.lastBattle):""}`;return}if(!targets.includes(battleDraft.targetId))battleDraft.targetId=targets[0];const available=ownedOfficers(S).filter(o=>!o.injured);battleDraft.leaderIds=battleDraft.leaderIds.filter(id=>available.some(o=>o.id===id)).slice(0,3);if(!battleDraft.leaderIds.length)battleDraft.leaderIds=available.slice().sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,3).map(o=>o.id);battleDraft.troops=clamp(battleDraft.troops,10,S.crew);const est=estimateBattle(S,battleDraft.targetId,battleDraft.leaderIds,battleDraft.troops,battleDraft.tactic);panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">BATTLE PLAN</span><h2>每拿一块地，都要先决定让谁去、带多少人去</h2><p>情报、主将、战术和士气会共同决定胜负。双方实力越接近，临场波动越可能改写结果。</p>${metrics([[S.crew,"可调人手"],[S.morale,"当前士气"],[S.training,"整训加成"],[S.intel[battleDraft.targetId]?"已查清":"未查清","目标情报"]])}</section><div class="section-head"><h2>血拼计划</h2><span>发起进攻不消耗行动点</span></div><div class="battle-layout"><div class="battle-targets">${targets.map(id=>`<button class="target-row ${id===battleDraft.targetId?"active":""}" data-target="${id}"><b>${TERRITORY_DEFS[id].name}</b><span>${FACTIONS[S.territories[id].owner].name} · ${S.intel[id]?`驻防 ${S.territories[id].guard}`:"驻防不明"}</span></button>`).join("")}</div><div class="battle-form"><span class="form-label">选择战术</span><div class="tactic-grid">${[["assault","正面强攻"],["steady","稳扎稳打"],["ambush","迂回奇袭"],["persuade","攻心劝降"]].map(([id,n])=>`<button class="tactic-btn ${battleDraft.tactic===id?"active":""}" data-tactic="${id}">${n}</button>`).join("")}</div><span class="form-label">选择头目（最多3人）</span><div class="leader-checks">${available.map(o=>`<div class="leader-check"><input id="lead_${o.id}" type="checkbox" data-leader="${o.id}" ${battleDraft.leaderIds.includes(o.id)?"checked":""}><label for="lead_${o.id}">${esc(o.name)} · ${esc(o.type)}</label></div>`).join("")}</div><span class="form-label">参战人手：<b id="troopValue">${battleDraft.troops}</b> / ${S.crew}</span><input id="troopRange" class="troop-range" type="range" min="10" max="${S.crew}" value="${battleDraft.troops}"><div id="battleEstimate" class="battle-estimate">战前评估：<b>${est.label}</b>${hasOfficer(S,"sumanqing")?`<br>预估攻守比 ${est.ratio.toFixed(2)}，随机与人物特性仍可能改写结果。`:"<br>苏曼青不在阵中，只能给出粗略判断。"}</div><button id="launchBattle" class="launch-btn" ${battleDraft.leaderIds.length?"":"disabled"}>开战 · ${TERRITORY_DEFS[battleDraft.targetId].name}</button></div></div>${S.lastBattle?renderLastBattle(S.lastBattle):""}`;panel.querySelectorAll("[data-target]").forEach(b=>b.addEventListener("click",()=>{battleDraft.targetId=b.dataset.target;renderBattle()}));panel.querySelectorAll("[data-tactic]").forEach(b=>b.addEventListener("click",()=>{battleDraft.tactic=b.dataset.tactic;renderBattle()}));panel.querySelectorAll("[data-leader]").forEach(c=>c.addEventListener("change",()=>{const id=c.dataset.leader;if(c.checked){if(battleDraft.leaderIds.length>=3){c.checked=false;toast("最多选3名头目");return}battleDraft.leaderIds.push(id)}else battleDraft.leaderIds=battleDraft.leaderIds.filter(x=>x!==id);renderBattle()}));$("troopRange").addEventListener("input",e=>{battleDraft.troops=Number(e.target.value);$("troopValue").textContent=battleDraft.troops;const x=estimateBattle(S,battleDraft.targetId,battleDraft.leaderIds,battleDraft.troops,battleDraft.tactic);$("battleEstimate").innerHTML=`战前评估：<b>${x.label}</b>${hasOfficer(S,"sumanqing")?`<br>预估攻守比 ${x.ratio.toFixed(2)}`:""}`});$("launchBattle").addEventListener("click",launchBattle)}
+function renderBattle(){if(S.battleSession)return renderBattleSession();const panel=$("panel"),targets=attackableTerritories(S);if(!targets.length){panel.innerHTML='<div class="empty-state">当前没有可进攻地盘。如果你已占七地，中央港区会成为最后目标。</div>';return}if(S.crew<10){panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">BATTLE PLAN</span><h2>人手不足，今晚不能开战</h2><p>至少需要10名能战人手，当前只有 <b>${S.crew}</b> 人。${S.regroup+S.wounded>0?`另有 ${S.regroup} 人整补中、${S.wounded} 人养伤——他们会在往后几个月陆续归队。`:"先去议事堂招人。"}</p></section><button class="launch-btn" disabled>人手不足10人</button>${S.lastBattle?renderLastBattle(S.lastBattle):""}`;return}if(!targets.includes(battleDraft.targetId))battleDraft.targetId=targets[0];const available=ownedOfficers(S).filter(o=>!o.injured);battleDraft.leaderIds=battleDraft.leaderIds.filter(id=>available.some(o=>o.id===id)).slice(0,3);if(!battleDraft.leaderIds.length)battleDraft.leaderIds=available.slice().sort((a,b)=>leaderScore(b)-leaderScore(a)).slice(0,3).map(o=>o.id);battleDraft.troops=clamp(battleDraft.troops,10,S.crew);const est=estimateBattle(S,battleDraft.targetId,battleDraft.leaderIds,battleDraft.troops,battleDraft.tactic);panel.innerHTML=`<section class="hero-panel"><span class="eyebrow">BATTLE PLAN</span><h2>每拿一块地，都要先决定让谁去、带多少人去</h2><p>情报、主将、战术和士气会共同决定胜负。双方实力越接近，临场波动越可能改写结果。</p>${metrics([[S.crew,"能战人手"],[S.morale,"当前士气"],[S.training,"整训加成"],[S.intel[battleDraft.targetId]?"已查清":"未查清","目标情报"]])}${S.regroup+S.wounded>0?`<p class="muted-note">另有 ${S.regroup} 人整补中、${S.wounded} 人养伤，本月不能出战。</p>`:""}</section><div class="section-head"><h2>血拼计划</h2><span>发起进攻消耗 1 行动点</span></div><div class="battle-layout"><div class="battle-targets">${targets.map(id=>`<button class="target-row ${id===battleDraft.targetId?"active":""}" data-target="${id}"><b>${TERRITORY_DEFS[id].name}</b><span>${FACTIONS[S.territories[id].owner].name} · ${S.intel[id]?`驻防 ${S.territories[id].guard}`:"驻防不明"}</span></button>`).join("")}</div><div class="battle-form"><span class="form-label">选择战术</span><div class="tactic-grid">${[["assault","正面强攻"],["steady","稳扎稳打"],["ambush","迂回奇袭"],["persuade","攻心劝降"]].map(([id,n])=>`<button class="tactic-btn ${battleDraft.tactic===id?"active":""}" data-tactic="${id}">${n}</button>`).join("")}</div><span class="form-label">选择头目（最多3人）</span><div class="leader-checks">${available.map(o=>`<div class="leader-check"><input id="lead_${o.id}" type="checkbox" data-leader="${o.id}" ${battleDraft.leaderIds.includes(o.id)?"checked":""}><label for="lead_${o.id}">${esc(o.name)} · ${esc(o.type)}</label></div>`).join("")}</div><span class="form-label">参战人手：<b id="troopValue">${battleDraft.troops}</b> / ${S.crew}</span><input id="troopRange" class="troop-range" type="range" min="10" max="${S.crew}" value="${battleDraft.troops}"><div id="battleEstimate" class="battle-estimate">战前评估：<b>${est.label}</b>${hasOfficer(S,"sumanqing")?`<br>预估攻守比 ${est.ratio.toFixed(2)}，随机与人物特性仍可能改写结果。`:"<br>苏曼青不在阵中，只能给出粗略判断。"}</div><button id="launchBattle" class="launch-btn" ${battleDraft.leaderIds.length?"":"disabled"}>开战 · ${TERRITORY_DEFS[battleDraft.targetId].name}</button></div></div>${S.lastBattle?renderLastBattle(S.lastBattle):""}`;panel.querySelectorAll("[data-target]").forEach(b=>b.addEventListener("click",()=>{battleDraft.targetId=b.dataset.target;renderBattle()}));panel.querySelectorAll("[data-tactic]").forEach(b=>b.addEventListener("click",()=>{battleDraft.tactic=b.dataset.tactic;renderBattle()}));panel.querySelectorAll("[data-leader]").forEach(c=>c.addEventListener("change",()=>{const id=c.dataset.leader;if(c.checked){if(battleDraft.leaderIds.length>=3){c.checked=false;toast("最多选3名头目");return}battleDraft.leaderIds.push(id)}else battleDraft.leaderIds=battleDraft.leaderIds.filter(x=>x!==id);renderBattle()}));$("troopRange").addEventListener("input",e=>{battleDraft.troops=Number(e.target.value);$("troopValue").textContent=battleDraft.troops;const x=estimateBattle(S,battleDraft.targetId,battleDraft.leaderIds,battleDraft.troops,battleDraft.tactic);$("battleEstimate").innerHTML=`战前评估：<b>${x.label}</b>${hasOfficer(S,"sumanqing")?`<br>预估攻守比 ${x.ratio.toFixed(2)}`:""}`});$("launchBattle").addEventListener("click",launchBattle)}
 function renderLastBattle(r){return`<div class="section-head"><h2>上一场战报</h2><span>${r.won?"夺地成功":"进攻失利"}</span></div><div class="battle-report"><div class="result-score"><span>和联胜</span><strong>${r.won?"胜":"败"}</strong><span>${esc(r.targetName)}</span></div>${r.stages.map(x=>`<article class="battle-stage"><time>${x.name}</time><div><h3>${esc(r.targetName)}</h3><p>${esc(x.text)}</p></div></article>`).join("")}</div>`}
 // 战果仍走一次 enqueue：endGame 会清空旧队列、挂起 pendingEnding，再由 pumpModal 在队列排空后
 // flushEnding()。少了这次入队，终局之战的结局会直接盖住玩家还没看的战果。
@@ -492,6 +618,7 @@ function launchBattle(){
   if(!S){toast("当前存档已经失效");return false}
   if(S.battleSession){renderAll();return false}
   if(S.crew<10){toast("至少需要10名人手才能开战");return false}
+  if(S.ap<1){toast("行动点已用完，这个月打不了了");return false}
   if(!battleDraft.leaderIds.length){toast("至少选择一名头目");return false}
   try{
     const target=battleDraft.targetId;
@@ -517,4 +644,4 @@ function lockZoom(){["gesturestart","gesturechange","gestureend"].forEach(t=>doc
 function boot(){lockZoom();const saved=loadGame();$("newGameBtn")?.addEventListener("click",showCreator);$("continueBtn")?.addEventListener("click",()=>{S=loadGame();showGame()});$("creedPicker")?.querySelectorAll("[data-creed]").forEach(b=>b.addEventListener("click",()=>{creatorCreed=b.dataset.creed;$("creedPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("difficultyPicker")?.querySelectorAll("[data-difficulty]").forEach(b=>b.addEventListener("click",()=>{creatorDifficulty=b.dataset.difficulty;$("difficultyPicker").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b))}));$("startGameBtn")?.addEventListener("click",()=>{S=createInitialState($("playerName").value,creatorCreed,creatorDifficulty);prologueIndex=0;$("creator").classList.add("hidden");$("prologue").classList.remove("hidden");renderPrologue()});$("nextPrologueBtn")?.addEventListener("click",()=>{if(prologueIndex<PROLOGUE.length-1){prologueIndex++;renderPrologue()}else showGame()});$("gameNav")?.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{if(!S){showMenu();return}S.tab=b.dataset.tab;saveGame();renderAll()}));$("endMonthBtn")?.addEventListener("click",()=>S&&advanceMonth(S));$("saveBtn")?.addEventListener("click",()=>{if(saveGame())toast("进度已保存在本机")});$("restartBtn")?.addEventListener("click",()=>{if(confirm("删除当前存档并重新开始？")){deleteSave();S=null;showMenu()}});showMenu();if(saved&&saved.ended){S=saved}}
 
 if(typeof document!=="undefined")document.addEventListener("DOMContentLoaded",boot);
-if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,applyStageChoice,finishBattle,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
+if(typeof module!=="undefined"&&module.exports)module.exports={CHARACTER_DEFS,TERRITORY_DEFS,createInitialState,makeCommonCandidate,refreshRecruitMarket,hireCommon,totalCrew,crewCap,drainCrew,recoverCrew,officerTension,enemyTurn,enemyGrowth,effectiveGuard,tickSettling,settlingTerritories,woundedCareCost,monthlyGross,monthlyUpkeep,attackableTerritories,estimateBattle,startBattle,stageOptions,applyStageChoice,finishBattle,resolveBattle,advanceMonth,ownTerritories,officerCapacity,applyAction,applyEconomy,checkInsolvency,monthDisplay,normalizeState,namedCandidateStatus};
